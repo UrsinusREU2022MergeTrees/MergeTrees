@@ -5,6 +5,54 @@ on the merge trees
 import numpy as np
 import matplotlib.pyplot as plt
 
+
+def get_spline(ys, n_subdivide=10):
+    """
+    Compute a cublic spline that goes through a time series
+    
+    Parameters
+    ----------
+    ys: ndarray(N)
+        Time series
+    n_subdivide: int
+        Number of samples to include between each adjacent pair of time series points
+
+    Return
+    ------
+    ndarray(N*n_subdivide)
+        Samples on spline
+    """
+    ys = np.array(ys)
+    xs = np.arange(ys.size)
+    n = len(ys)-1
+    a = np.array(ys)
+    b = np.zeros(n)
+    d = np.zeros(n)
+    h = xs[1::]-xs[0:-1]
+    alpha = np.zeros(n)
+    for i in range(1, n):
+        alpha[i] = 3*(a[i+1]-a[i])/h[i] - 3*(a[i]-a[i-1])/h[i-1]
+    c = np.zeros(n+1)
+    l = np.zeros(n+1)
+    mu = np.zeros(n+1)
+    z = np.zeros(n+1)
+    l[0] = 1
+    for i in range(1, n):
+        l[i] = 2*(xs[i+1]-xs[i-1])-h[i-1]*mu[i-1]
+        mu[i] = h[i]/l[i]
+        z[i] = (alpha[i]-h[i-1]*z[i-1])/l[i]
+    l[n] = 1
+    for j in range(n-1, -1, -1):
+        c[j] = z[j]-mu[j]*c[j+1]
+        b[j] = (a[j+1]-a[j])/h[j] - h[j]*(c[j+1]+2*c[j])/3
+        d[j] = (c[j+1]-c[j])/(3*h[j])
+    yret = np.array([])
+    for i in range(n):
+        x = np.linspace(xs[i], xs[i+1], n_subdivide+1)[0:n_subdivide]
+        f = a[i] + b[i]*(x-xs[i]) + c[i]*(x-xs[i])**2 + d[i]*(x-xs[i])**3
+        yret = np.concatenate((yret, f))
+    return yret
+
 def poly_fit(X, xs, do_plot = False):
     """
     Given a Nx2 array X of 2D coordinates, fit an N^th order polynomial
