@@ -292,13 +292,13 @@ class MergeTree(object):
         leaves = {} # Leaf nodes
         I = [] #Persistence diagram
         for i in idx: # Go through each point in the time series in height order
-            neighbs = set([])
+            neighbs = []
             #Find the oldest representatives of the neighbors that
             #are already alive
             for di in [-1, 1]: #Neighbor set is simply left/right
                 if i+di >= 0 and i+di < N:
                     if idxorder[i+di] < idxorder[i]:
-                        neighbs.add(unionfind_root(pointers, i+di))
+                        neighbs.append(unionfind_root(pointers, i+di))
             if len(neighbs) == 0:
                 #If none of this point's neighbors are alive yet, this
                 #point will become alive with its own class
@@ -306,7 +306,6 @@ class MergeTree(object):
                 representatives[i] = leaves[i]
                 self.root = representatives[i]
             else:
-                neighbs = list(neighbs)
                 #Find the oldest class, merge earlier classes with this class,
                 #and record the merge events and birth/death times
                 oldest_neighb = neighbs[np.argmin([idxorder[n] for n in neighbs])]
