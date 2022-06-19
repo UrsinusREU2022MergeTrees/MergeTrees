@@ -210,18 +210,20 @@ class MergeTree(object):
                 #oldest class to which it is connected
                 unionfind_union(pointers, oldest_neighb, i, idxorder)
                 if len(neighbs) == 2: #A nontrivial merge
-                    node = MergeNode(x[i], i)
-                    node.left, node.right = [representatives[n] for n in neighbs]
-                    self.root = node
                     for n in neighbs:
                         if not (n == oldest_neighb):
-                            #Record persistence event
-                            I.append([x[n], x[i]])
-                            leaves[n].birth_death = (x[n], x[i])
+                            #Create node and record persistence event if it's nontrivial
+                            if x[i] > x[n]:
+                                # Record persistence information
+                                I.append([x[n], x[i]])
+                                leaves[n].birth_death = (x[n], x[i])
+                                # Create new node
+                                node = MergeNode(x[i], i)
+                                node.left, node.right = [representatives[n] for n in neighbs]
+                                self.root = node
+                                #Change the representative for this class to be the new node
+                                representatives[oldest_neighb] = node
                         unionfind_union(pointers, oldest_neighb, n, idxorder)
-                    #Change the representative for this class to be the
-                    #saddle point
-                    representatives[oldest_neighb] = node
         #Add the essential class
         idx1 = np.argmin(x)
         idx2 = np.argmax(x)
