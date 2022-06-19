@@ -19,6 +19,13 @@ class MergeNode(object):
         self.idx = -1 # Inorder index
         self.birth_death = []
     
+    def get_all_yvals(self, yvals):
+        yvals.append(self.y)
+        if self.left:
+            self.left.get_all_yvals(yvals)
+        if self.right:
+            self.right.get_all_yvals(yvals)
+
     def inorder(self, idx):
         """
         Perform an inorder traversal
@@ -50,9 +57,9 @@ class MergeNode(object):
                 coords[0] = self.x
         return coords
 
-    def render(self, use_inorder, params):
+    def plot(self, use_inorder, params):
         """
-        Recursive helper method for rendering
+        Recursive helper method for plotting
 
         Parameters
         ----------
@@ -65,31 +72,33 @@ class MergeNode(object):
             draw_curved: boolean: If true, draw parabolic curved lines between nodes
             linewidth: int: How thick to draw the edges
             pointsize: int: How big to draw the nodes
+            plot_birthdeath: boolean: Whether to plot (birth, death) at leaf nodes
         }
         """
         offset = np.array([0, 0]) if not 'offset' in params else params['offset']
         draw_curved = True if not 'draw_curved' in params else params['draw_curved']
         linewidth = 3 if not 'linewidth' in params else params['linewidth']
         pointsize = 200 if not 'pointsize' in params else params['pointsize']
+        plot_birthdeath = False if not 'plot_birthdeath' in params else params['plot_birthdeath']
         X = np.array([self.x, self.y])
         X = self.get_coords(use_inorder) + offset
         plt.scatter(X[0], X[1], pointsize, 'k')
-        if len(self.birth_death) > 0:
-            plt.text(X[0], X[1], "{}".format(self.birth_death))
+        if len(self.birth_death) > 0 and plot_birthdeath:
+            plt.text(X[0], X[1], "{}".format(self.birth_death), c='r')
         if self.left:
             Y = self.left.get_coords(use_inorder) + offset
             if draw_curved:
                 draw_curve(X, Y, linewidth)
             else:
                 plt.plot([X[0], Y[0]], [X[1], Y[1]], 'k', lineWidth=linewidth)
-            self.left.render(use_inorder, params)
+            self.left.plot(use_inorder, params)
         if self.right:
             Y = self.right.get_coords(use_inorder) + offset
             if draw_curved:
                 draw_curve(X, Y, linewidth)
             else:
                 plt.plot([X[0], Y[0]], [X[1], Y[1]], 'k', lineWidth=linewidth)
-            self.right.render(use_inorder, params)
+            self.right.plot(use_inorder, params)
 
 
 def unionfind_root(pointers, u):
@@ -139,8 +148,22 @@ def unionfind_union(pointers, u, v, idxorder):
 class MergeTree(object):
     def __init__(self):
         self.root = None
+        self.PD = np.array([[]])
     
-    def render(self, use_inorder, params={}):
+    def get_all_yvals(self):
+        """
+        Return a list of all of the y values in the tree
+        
+        Returns
+        -------
+        list: all of the y values
+        """
+        yvals = []
+        if self.root:
+            self.root.get_all_yvals(yvals)
+        return yvals
+
+    def plot(self, use_inorder, params={}):
         """
         Draw this tree
 
@@ -155,12 +178,58 @@ class MergeTree(object):
             draw_curved: boolean: If true, draw parabolic curved lines between nodes
             linewidth: int: How thick to draw the edges
             pointsize: int: How big to draw the nodes
+            plot_birthdeath: boolean: Whether to plot (birth, death) at leaf nodes
         }
         """
-        if use_inorder:
-            idx = [0]
-            self.root.inorder(idx)
-        self.root.render(use_inorder, params)
+        if self.root:
+            if use_inorder:
+                idx = [0]
+                self.root.inorder(idx)
+            self.root.plot(use_inorder, params)
+    
+    def plot_with_pd(self, use_inorder, params={}):
+        """
+        Draw this tree alongslide its persistence diagram
+
+        Parameters
+        ----------
+        use_inorder: boolean
+            If True, use the inorder coordinate for x.  If false,
+            use a prespecified x coordinate if it exists
+        
+        params: dict {
+            offset: [x, y]: Offset by which to plot this
+            draw_curved: boolean: If true, draw parabolic curved lines between nodes
+            linewidth: int: How thick to draw the edges
+            pointsize: int: How big to draw the nodes
+            plot_birthdeath: boolean: Whether to plot (birth, death) at leaf nodes
+            use_grid: boolean: Whether to draw grid lines
+            show_merge_xticks: Whether to show the x ticks for the merge tree
+        }
+        """
+        from persim import plot_diagrams
+        if self.root:
+            use_grid = False if not 'use_grid' in params else params['use_grid']
+            show_merge_xticks = False if not 'show_merge_xticks' in params else params['show_merge_xticks']
+            yvals = np.sort(np.unique(self.get_all_yvals()))
+            dy = yvals[-1] - yvals[0]
+            plt.subplot(121)
+            self.plot(use_inorder, params)
+            plt.gca().set_yticks(yvals)
+            plt.ylim(yvals[0]-0.1*dy, yvals[-1]+0.1*dy)
+            if not show_merge_xticks:
+                plt.gca().set_xticks([])
+            if use_grid:
+                plt.grid()
+            plt.subplot(122)
+            plot_diagrams([self.PD])
+            plt.gca().set_yticks(np.unique(self.PD[:, 1]))
+            plt.ylim(yvals[0]-0.1*dy, yvals[-1]+0.1*dy)
+            plt.gca().set_xticks(np.unique(self.PD[:, 0]))
+            plt.xlim(yvals[0]-0.1*dy, yvals[-1]+0.1*dy)
+            if use_grid:
+                plt.grid()
+
     
     def init_from_timeseries(self, x):
         """
@@ -176,7 +245,8 @@ class MergeTree(object):
         Returns
         -------
         I: ndarray(N, 2)
-            H0 persistence diagram for this merge tree
+            H0 persistence diagram for this merge tree (also store locally
+            as a side effect)
         """
         #Add points from the bottom up
         N = len(x)
@@ -230,19 +300,6 @@ class MergeTree(object):
         [b, d] = [x[idx1], x[idx2]]
         I.append([b, d])
         leaves[idx1].birth_death = (b, d)
-        return np.array(I)
-
-
-if __name__ == '__main__':
-    from persim import plot_diagrams
-    
-    MT = MergeTree()
-    x = [0, 1, -1, 3, 3, 0.5, 1, 1, 2, 1, 4, 0][::-1]
-    I = MT.init_from_timeseries(x)
-    
-    plt.figure(figsize=(12, 6))
-    plt.subplot(121)
-    MT.render(False)
-    plt.subplot(122)
-    plot_diagrams([I])
-    plt.show()
+        PD = np.array(I)
+        self.PD = PD
+        return PD
