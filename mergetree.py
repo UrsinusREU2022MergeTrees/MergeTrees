@@ -196,7 +196,7 @@ class MergeTree(object):
         seq = []
         if self.root:
             self.root.get_weight_sequence(0, seq)
-        return seq
+        return np.array(seq)
 
     def plot(self, use_inorder, params={}):
         """
