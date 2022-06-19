@@ -26,6 +26,27 @@ class MergeNode(object):
         if self.right:
             self.right.get_all_yvals(yvals)
 
+    def get_weight_sequence(self, val, seq):
+        """
+        Recursively obtain the non-redundant, height-based weight sequence
+        by doing a preorder traversal through the tree
+
+        Parameters
+        ----------
+        val: float
+            Cumulative weight sum
+        seq: list
+            Weight sequence being constructed
+        """
+        if not self.left and not self.right:
+            # Node is a leaf node
+            seq.append(val)
+        else:
+            if self.left:
+                self.left.get_weight_sequence(val + self.y - self.left.y, seq)
+            if self.right:
+                self.right.get_weight_sequence(self.y - self.right.y, seq)
+
     def inorder(self, idx):
         """
         Perform an inorder traversal
@@ -163,6 +184,20 @@ class MergeTree(object):
             self.root.get_all_yvals(yvals)
         return yvals
 
+    def get_weight_sequence(self):
+        """
+        Recursively obtain the non-redundant, height-based weight sequence
+        by doing a preorder traversal through the tree
+
+        Returns
+        -------
+        list: Weight sequence 
+        """
+        seq = []
+        if self.root:
+            self.root.get_weight_sequence(0, seq)
+        return seq
+
     def plot(self, use_inorder, params={}):
         """
         Draw this tree
@@ -230,7 +265,6 @@ class MergeTree(object):
             if use_grid:
                 plt.grid()
 
-    
     def init_from_timeseries(self, x):
         """
         Uses union find to make a merge tree object from the time series x
@@ -289,7 +323,10 @@ class MergeTree(object):
                                 leaves[n].birth_death = (x[n], x[i])
                                 # Create new node
                                 node = MergeNode(x[i], i)
-                                node.left, node.right = [representatives[n] for n in neighbs]
+                                left_right = [representatives[n] for n in neighbs]
+                                if left_right[0].x > left_right[1].x:
+                                    left_right = left_right[::-1]
+                                node.left, node.right = left_right
                                 self.root = node
                                 #Change the representative for this class to be the new node
                                 representatives[oldest_neighb] = node
