@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from utils import draw_curve
+from utils import draw_curve, plot_diagrams
 
 class MergeNode(object):
     def __init__(self, y, x=None):
@@ -12,78 +12,12 @@ class MergeNode(object):
         x: float
             x position of node (optional)
         """
-        self.left = None
-        self.right = None
+        self.children = []
         self.x = x
         self.y = y
         self.idx = -1 # Inorder index
         self.birth_death = []
-    
-    def get_all_yvals(self, yvals):
-        yvals.append(self.y)
-        if self.left:
-            self.left.get_all_yvals(yvals)
-        if self.right:
-            self.right.get_all_yvals(yvals)
 
-    def get_weight_sequence(self, val, seq):
-        """
-        Recursively obtain the non-redundant, height-based weight sequence
-        by doing a preorder traversal through the tree
-
-        Parameters
-        ----------
-        val: float
-            Cumulative weight sum
-        seq: list
-            Weight sequence being constructed
-        """
-        if not self.left and not self.right:
-            # Node is a leaf node
-            seq.append(val)
-        else:
-            if self.left:
-                self.left.get_weight_sequence(val + self.y - self.left.y, seq)
-            if self.right:
-                self.right.get_weight_sequence(self.y - self.right.y, seq)
-
-    def get_piecewise_linear_rep(self, ys):
-        """
-        Create a piecewise linear function that is 
-        obtained from an inorder traversal of the y
-        coordinates of the nodes in this tree
-
-        Parameters
-        ----------
-        ys: list of float
-            Time series that I'm building
-
-        Returns
-        -------
-        ndarray(N): Time series representing piecewise linear function,
-        with as many samples as there are nodes in the tree
-        """
-        if self.left:
-            self.left.get_piecewise_linear_rep(ys)
-        ys.append(self.y)
-        if self.right:
-            self.right.get_piecewise_linear_rep(ys)
-
-
-    def inorder(self, idx):
-        """
-        Perform an inorder traversal
-
-        Parameters
-        idx: list[1]
-            A count, by reference
-        """
-        if self.left:
-            self.left.inorder(idx)
-        self.idx = idx[0]
-        idx[0] += 1
-        if self.right:
-            self.right.inorder(idx)
     
     def get_coords(self, use_inorder):
         """
@@ -100,6 +34,70 @@ class MergeNode(object):
             if self.x or self.x == 0:
                 coords[0] = self.x
         return coords
+
+    def get_weight_sequence(self, val, seq):
+        """
+        Recursively obtain the non-redundant, height-based weight sequence
+        by doing a generalized preorder traversal through the tree
+
+        Parameters
+        ----------
+        val: float
+            Cumulative weight sum
+        seq: list
+            Weight sequence being constructed
+        """
+        if len(self.children) == 0:
+            # Node is a leaf node
+            seq.append(val)
+        else:
+            for i, child in enumerate(sorted(self.children, key=lambda c: c.x)):
+                if i == 0:
+                    child.get_weight_sequence(val + self.y - child.y, seq)
+                else:
+                    child.get_weight_sequence(self.y - child.y, seq)
+
+
+    def inorder(self, idx):
+        """
+        Perform a generalized inorder traversal
+        NOTE: This will sort child nodes arbitrarily if 
+        their x coordinates have not been specified
+
+        Parameters
+        idx: list[1]
+            A count, by reference
+        """
+        for child in sorted(self.children+[self], key=lambda c: c.x):
+            if self == child:
+                self.idx = idx[0]
+                idx[0] += 1
+            else:
+                child.inorder(idx)
+
+    def get_rep_timeseries(self, ys):
+        """
+        Create a piecewise linear function that is 
+        obtained from an inorder traversal of the y
+        coordinates of the nodes in this tree
+
+        Parameters
+        ----------
+        ys: list of float
+            Time series that I'm building
+
+        Returns
+        -------
+        ndarray(N): Time series representing piecewise linear function,
+        with as many samples as there are nodes in the tree
+        """
+        if len(self.children) == 0:
+            ys.append(self.y)
+        for i, child in enumerate(sorted(self.children, key=lambda c: c.x)):
+            child.get_rep_timeseries(ys)
+            if i < len(self.children)-1:
+                # Put the max in between every adjacent pair of children
+                ys.append(self.y) 
 
     def plot(self, use_inorder, params):
         """
@@ -129,20 +127,13 @@ class MergeNode(object):
         plt.scatter(X[0], X[1], pointsize, 'k')
         if len(self.birth_death) > 0 and plot_birthdeath:
             plt.text(X[0], X[1], "{}".format(self.birth_death), c='r')
-        if self.left:
-            Y = self.left.get_coords(use_inorder) + offset
+        for child in self.children:
+            Y = child.get_coords(use_inorder) + offset
             if draw_curved:
                 draw_curve(X, Y, linewidth)
             else:
                 plt.plot([X[0], Y[0]], [X[1], Y[1]], 'k', lineWidth=linewidth)
-            self.left.plot(use_inorder, params)
-        if self.right:
-            Y = self.right.get_coords(use_inorder) + offset
-            if draw_curved:
-                draw_curve(X, Y, linewidth)
-            else:
-                plt.plot([X[0], Y[0]], [X[1], Y[1]], 'k', lineWidth=linewidth)
-            self.right.plot(use_inorder, params)
+            child.plot(use_inorder, params)
 
 
 def unionfind_root(pointers, u):
@@ -193,24 +184,11 @@ class MergeTree(object):
     def __init__(self):
         self.root = None
         self.PD = np.array([[]])
-    
-    def get_all_yvals(self):
-        """
-        Return a list of all of the y values in the tree
-        
-        Returns
-        -------
-        list: all of the y values
-        """
-        yvals = []
-        if self.root:
-            self.root.get_all_yvals(yvals)
-        return yvals
 
     def get_weight_sequence(self):
         """
         Recursively obtain the non-redundant, height-based weight sequence
-        by doing a preorder traversal through the tree
+        by doing a generalized preorder traversal through the tree
 
         Returns
         -------
@@ -221,7 +199,7 @@ class MergeTree(object):
             self.root.get_weight_sequence(0, seq)
         return np.array(seq)
 
-    def get_piecewise_linear_rep(self):
+    def get_rep_timeseries(self):
         """
         Return a piecewise linear function that is 
         obtained from an inorder traversal of the y
@@ -232,10 +210,10 @@ class MergeTree(object):
         ndarray(N): Time series representing piecewise linear function,
         with as many samples as there are nodes in the tree
         """
-        y = []
+        ys = []
         if self.root:
-            self.root.get_piecewise_linear_rep(y)
-        return np.array(y)
+            self.root.get_rep_timeseries(ys)
+        return np.array(ys)
 
     def plot(self, use_inorder, params={}):
         """
@@ -281,11 +259,10 @@ class MergeTree(object):
             show_merge_xticks: Whether to show the x ticks for the merge tree
         }
         """
-        from persim import plot_diagrams
         if self.root:
             use_grid = False if not 'use_grid' in params else params['use_grid']
             show_merge_xticks = False if not 'show_merge_xticks' in params else params['show_merge_xticks']
-            yvals = np.sort(np.unique(self.get_all_yvals()))
+            yvals = np.sort(np.unique(self.get_rep_timeseries()))
             dy = yvals[-1] - yvals[0]
             plt.subplot(121)
             self.plot(use_inorder, params)
@@ -364,7 +341,7 @@ class MergeTree(object):
                                 left_right = [representatives[n] for n in neighbs]
                                 if left_right[0].x > left_right[1].x:
                                     left_right = left_right[::-1]
-                                node.left, node.right = left_right
+                                node.children = left_right
                                 self.root = node
                                 #Change the representative for this class to be the new node
                                 representatives[oldest_neighb] = node
