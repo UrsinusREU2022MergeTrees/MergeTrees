@@ -99,6 +99,26 @@ class MergeNode(object):
                 # Put the max in between every adjacent pair of children
                 ys.append(self.y) 
 
+    def get_eps_saddle_pairs(self, eps, pairs, depth):
+        """
+        Collect all saddles whose height difference to their
+        children is under epsilon
+
+        Parameters
+        ----------
+        eps: float
+            Height difference below which to add a saddle pair
+        pairs: list of (lower, upper, depth)
+            Saddle pairs list that's being built
+        depth: int
+            Depth in tree
+        """
+        for child in self.children:
+            # Children may mutate from lower
+            if self.y - child.y <= eps:
+                pairs.append((child, self, depth))
+            child.get_eps_saddle_pairs(eps, pairs, depth+1)
+
     def plot(self, use_inorder, params):
         """
         Recursive helper method for plotting
@@ -204,7 +224,7 @@ class MergeTree(object):
         Return a piecewise linear function that is 
         obtained from an inorder traversal of the y
         coordinates of the nodes in this tree
-
+        
         Returns
         -------
         ndarray(N): Time series representing piecewise linear function,
@@ -214,6 +234,28 @@ class MergeTree(object):
         if self.root:
             self.root.get_rep_timeseries(ys)
         return np.array(ys)
+
+    def collapse_saddles(self, eps):
+        """
+        Collapse saddles from the bottom up, as in section 4.4 of [1]
+
+        [1] Sridharamurthy, R., Masood, T. B., Kamakshidasan, A., 
+        & Natarajan, V. (2018). Edit distance between merge trees. 
+        IEEE transactions on visualization and computer graphics, 
+        26(3), 1518-1531.
+
+        Parameters
+        ----------
+        eps: float
+            Height difference below which to make a collapse
+        """
+        if self.root:
+            pairs = []
+            self.root.get_eps_saddle_pairs(eps, pairs, 0)
+            pairs = sorted(pairs, key=lambda x: x[2], reverse=True)
+            for (lower, upper, _) in pairs:
+                children = [c for c in upper.children if c != lower]
+                upper.children = sorted(children + lower.children, key=lambda c:c.x)
 
     def plot(self, use_inorder, params={}):
         """
