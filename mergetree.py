@@ -47,6 +47,29 @@ class MergeNode(object):
             if self.right:
                 self.right.get_weight_sequence(self.y - self.right.y, seq)
 
+    def get_piecewise_linear_rep(self, ys):
+        """
+        Create a piecewise linear function that is 
+        obtained from an inorder traversal of the y
+        coordinates of the nodes in this tree
+
+        Parameters
+        ----------
+        ys: list of float
+            Time series that I'm building
+
+        Returns
+        -------
+        ndarray(N): Time series representing piecewise linear function,
+        with as many samples as there are nodes in the tree
+        """
+        if self.left:
+            self.left.get_piecewise_linear_rep(ys)
+        ys.append(self.y)
+        if self.right:
+            self.right.get_piecewise_linear_rep(ys)
+
+
     def inorder(self, idx):
         """
         Perform an inorder traversal
@@ -74,7 +97,7 @@ class MergeNode(object):
         """
         coords = np.array([self.idx, self.y])
         if not use_inorder:
-            if self.x:
+            if self.x or self.x == 0:
                 coords[0] = self.x
         return coords
 
@@ -198,6 +221,22 @@ class MergeTree(object):
             self.root.get_weight_sequence(0, seq)
         return np.array(seq)
 
+    def get_piecewise_linear_rep(self):
+        """
+        Return a piecewise linear function that is 
+        obtained from an inorder traversal of the y
+        coordinates of the nodes in this tree
+
+        Returns
+        -------
+        ndarray(N): Time series representing piecewise linear function,
+        with as many samples as there are nodes in the tree
+        """
+        y = []
+        if self.root:
+            self.root.get_piecewise_linear_rep(y)
+        return np.array(y)
+
     def plot(self, use_inorder, params={}):
         """
         Draw this tree
@@ -265,7 +304,7 @@ class MergeTree(object):
             if use_grid:
                 plt.grid()
 
-    def init_from_timeseries(self, x):
+    def init_from_timeseries(self, y):
         """
         Uses union find to make a merge tree object from the time series x
         (NOTE: This code is pretty general and could work to create merge trees
@@ -283,8 +322,8 @@ class MergeTree(object):
             as a side effect)
         """
         #Add points from the bottom up
-        N = len(x)
-        idx = np.argsort(x)
+        N = len(y)
+        idx = np.argsort(y)
         idxorder = np.zeros(N)
         idxorder[idx] = np.arange(N)
         pointers = np.arange(N) #Pointer to oldest indices
@@ -302,7 +341,7 @@ class MergeTree(object):
             if len(neighbs) == 0:
                 #If none of this point's neighbors are alive yet, this
                 #point will become alive with its own class
-                leaves[i] = MergeNode(x[i], i)
+                leaves[i] = MergeNode(y[i], i)
                 representatives[i] = leaves[i]
                 self.root = representatives[i]
             else:
@@ -316,12 +355,12 @@ class MergeTree(object):
                     for n in neighbs:
                         if not (n == oldest_neighb):
                             #Create node and record persistence event if it's nontrivial
-                            if x[i] > x[n]:
+                            if y[i] > y[n]:
                                 # Record persistence information
-                                I.append([x[n], x[i]])
-                                leaves[n].birth_death = (x[n], x[i])
+                                I.append([y[n], y[i]])
+                                leaves[n].birth_death = (y[n], y[i])
                                 # Create new node
-                                node = MergeNode(x[i], i)
+                                node = MergeNode(y[i], i)
                                 left_right = [representatives[n] for n in neighbs]
                                 if left_right[0].x > left_right[1].x:
                                     left_right = left_right[::-1]
@@ -331,9 +370,9 @@ class MergeTree(object):
                                 representatives[oldest_neighb] = node
                         unionfind_union(pointers, oldest_neighb, n, idxorder)
         #Add the essential class
-        idx1 = np.argmin(x)
-        idx2 = np.argmax(x)
-        [b, d] = [x[idx1], x[idx2]]
+        idx1 = np.argmin(y)
+        idx2 = np.argmax(y)
+        [b, d] = [y[idx1], y[idx2]]
         I.append([b, d])
         leaves[idx1].birth_death = (b, d)
         PD = np.array(I)
