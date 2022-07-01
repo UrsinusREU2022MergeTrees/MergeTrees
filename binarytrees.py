@@ -7,6 +7,7 @@ class TreeNode(object):
         self.left = None
         self.right = None
         self.inorder_pos = 0
+        self.origin = None
     
     def is_leaf(self):
         return (not self.left) and (not self.right)
@@ -28,15 +29,20 @@ class TreeNode(object):
             self.right.inorder(num, key_list)
     
     def draw(self, y):
+        y = self.key
         x = self.inorder_pos
-        plt.scatter([x], [y], 50, 'k')
+        color = ('green' if self.origin == 'augment' else 'black')
+        # plt.scatter([x], [y], 50, 'k')
+        plt.scatter([x], [y], 50, c=color)
         plt.text(x+0.2, y, "{}".format(self.key))
-        y_next = y-1
+        # y_next = y-1
         if self.left:
+            y_next = self.left.key
             x_next = self.left.inorder_pos
             plt.plot([x, x_next], [y, y_next])
             self.left.draw(y_next)
         if self.right:
+            y_next = self.right.key
             x_next = self.right.inorder_pos
             plt.plot([x, x_next], [y, y_next])
             self.right.draw(y_next)
