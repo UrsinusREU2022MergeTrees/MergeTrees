@@ -2,6 +2,37 @@ import numpy as np
 import matplotlib.pyplot as plt
 from utils import draw_curve, plot_diagrams
 
+def get_crit_timeseries(x, circular=False):
+    """
+    Filter out regular points from a time series
+    
+    Parameters
+    ----------
+    x: ndarray(N)
+        Input time series
+    circular: bool
+        Whether to assume the time series wraps around
+    
+    Returns
+    -------
+    y: ndarray(M <= N)
+        A time series with only critical points
+    signs: ndarray(M)
+        A parallel array indicating local min (-1) or local max (+1)
+    """
+    y = []
+    signs = []
+    for i in range(x.size):
+        neighbs = [n for n in [i-1, i+1] if circular or (n >= 0 and n < x.size)]
+        if circular:
+            neighbs = [n % x.size for n in neighbs]
+        xn = [np.sign(x[n]-x[i]) for n in neighbs]
+        # It's an endpoint or neighbors are both same sign
+        if len(xn) == 1 or np.prod(np.array(xn)) == 1: 
+            y.append(x[i])
+            signs.append(-xn[0])
+    return np.array(y), np.array(signs)
+
 class MergeNode(object):
     def __init__(self, y, x=None):
         """
@@ -323,7 +354,7 @@ class MergeTree(object):
             if use_grid:
                 plt.grid()
 
-    def init_from_timeseries(self, y):
+    def init_from_timeseries(self, y, include_essential=False):
         """
         Uses union find to make a merge tree object from the time series x
         (NOTE: This code is pretty general and could work to create merge trees
@@ -331,9 +362,11 @@ class MergeTree(object):
 
         Parameters
         ----------
-        x: ndarray(N)
+        y: ndarray(N)
             1D array representing the time series
-        
+        include_essential: bool
+            Whether to include the essential class
+
         Returns
         -------
         I: ndarray(N, 2)
@@ -389,11 +422,12 @@ class MergeTree(object):
                                 representatives[oldest_neighb] = node
                         unionfind_union(pointers, oldest_neighb, n, idxorder)
         #Add the essential class
-        idx1 = np.argmin(y)
-        idx2 = np.argmax(y)
-        [b, d] = [y[idx1], y[idx2]]
-        I.append([b, d])
-        leaves[idx1].birth_death = (b, d)
+        if include_essential:
+            idx1 = np.argmin(y)
+            idx2 = np.argmax(y)
+            [b, d] = [y[idx1], y[idx2]]
+            I.append([b, d])
+            leaves[idx1].birth_death = (b, d)
         PD = np.array(I)
         self.PD = PD
         return PD
