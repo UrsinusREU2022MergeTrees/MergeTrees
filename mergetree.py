@@ -4,6 +4,16 @@ import matplotlib.pyplot as plt
 from utils import draw_curve, plot_diagrams
 
 @jit(nopython=True)
+def delete_repeats(x):
+    xret = []
+    for i in range(len(x)):
+        if i == 0:
+            xret.append(x[i])
+        elif x[i] != x[i-1]:
+            xret.append(x[i])
+    return np.array(xret)
+
+@jit(nopython=True)
 def get_crit_timeseries(x, circular=False):
     """
     Filter out regular points from a time series
@@ -22,6 +32,10 @@ def get_crit_timeseries(x, circular=False):
     signs: ndarray(M)
         A parallel array indicating local min (-1) or local max (+1)
     """
+    ## Step 1: Merge adjacent points that are equal
+    x = delete_repeats(x)
+
+    ## Step 2: Find critical points
     y = []
     signs = []
     for i in range(x.size):

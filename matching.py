@@ -86,6 +86,7 @@ def dpw(x, y):
     path.append([0, 0])
     path.reverse()
 
+    ## Step 5: Extract and merge deleted chunk indices
     xdel = []
     ydel = []
     for i in range(len(path)-1):
