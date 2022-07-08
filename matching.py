@@ -1,7 +1,9 @@
 import numpy as np
-#from numba import jit
+from numba import jit
+from numba.types import int_, float32
 from mergetree import *
 
+@jit("Tuple((f4,i8[:,:],i8[:,:]))(f8[:],f8[:])", nopython=True)
 def dpw(x, y):
     """
     Compute dynamic persistence warping (DPW) between two time series
@@ -25,15 +27,17 @@ def dpw(x, y):
     M = x.size
     N = y.size
     # Use cumulative sums for quick deletion cost lookup
-    xcosts = np.concatenate(([0], np.cumsum(x*xs)))
-    ycosts = np.concatenate(([0], np.cumsum(y*ys)))
+    xcosts = np.zeros(x.size+1, float32)
+    xcosts[1::] = np.cumsum(x*xs)
+    ycosts = np.zeros(y.size+1, float32)
+    ycosts[1::] = np.cumsum(y*ys)
     if M == 0 or N == 0:
         # Corner case
-        return xcosts[-1] + ycosts[-1]
+        return xcosts[-1] + ycosts[-1], np.zeros((0,0), int_), np.zeros((0,0), int_)
 
     ## Step 2: Setup data structures
     # Dynamic programming matrix
-    D = np.inf*np.ones((M+1, N+1))
+    D = np.inf*np.ones((M+1, N+1), float32)
     D[0, 0] = 0
     # Backtracing matrix; each entry is sizes of chunks deleted from each time series
     back = [[[0, 0] for j in range(N+1)] for i in range(M+1)]
@@ -80,22 +84,31 @@ def dpw(x, y):
             i -= di
             j -= dj
     path.append([0, 0])
+    path.reverse()
 
     xdel = []
     ydel = []
     for i in range(len(path)-1):
         p1 = np.array(path[i])
         p2 = np.array(path[i+1])
-        diff = p1 - p2
+        diff = p2 - p1
         if diff[0] > 1:
-            xdel.append([p2[0], p1[0]])
+            xnext = [p1[0], p2[0]]
+            if len(xdel) > 0 and xdel[-1][1] == xnext[0]:
+                # Merge with last chunk
+                xdel[-1][1] = xnext[1]
+            else:
+                xdel.append(xnext)
         if diff[1] > 1:
-            ydel.append([p2[1], p1[1]])
-    xdel.reverse()
-    ydel.reverse()
-
+            ynext = [p1[1], p2[1]]
+            if len(ydel) > 0 and ydel[-1][1] == ynext[0]:
+                # Merge with last chunk
+                ydel[-1][1] = ynext[1]
+            else:
+                ydel.append(ynext)
+    xdel = np.array(xdel, int_)
+    ydel = np.array(ydel, int_)
     return D[-1, -1], xdel, ydel
-
 
 
 def weight_sequence_distance(w1, w2):

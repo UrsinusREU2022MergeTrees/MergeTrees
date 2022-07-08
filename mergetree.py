@@ -1,7 +1,9 @@
 import numpy as np
+from numba import jit
 import matplotlib.pyplot as plt
 from utils import draw_curve, plot_diagrams
 
+@jit(nopython=True)
 def get_crit_timeseries(x, circular=False):
     """
     Filter out regular points from a time series
