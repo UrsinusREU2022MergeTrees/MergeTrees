@@ -160,3 +160,144 @@ def weight_sequence_distance(w1, w2):
         i, j = back[i][j]
     path.append([0, 0])
     return D[-1, -1], path[::-1]
+
+
+
+def wasserstein(dgm1, dgm2, matching=False):
+    from scipy import optimize
+    """
+    Perform the L1 Wasserstein distance matching between persistence diagrams.
+    Assumes first two columns of dgm1 and dgm2 are the coordinates of the persistence
+    points, but allows for other coordinate columns (which are ignored in
+    diagonal matching).
+
+    See the `distances` notebook for an example of how to use this.
+
+    Parameters
+    ------------
+
+    dgm1: Mx(>=2) 
+        array of birth/death pairs for PD 1
+    dgm2: Nx(>=2) 
+        array of birth/death paris for PD 2
+    matching: bool, default False
+        if True, return matching information and cross-similarity matrix
+
+    Returns 
+    ---------
+
+    d: float
+        Wasserstein distance between dgm1 and dgm2
+    (matching, D): Only returns if `matching=True`
+        (tuples of matched indices, (N+M)x(N+M) cross-similarity matrix)
+
+    """
+    from warnings import warn
+    S = np.array(dgm1)
+    M = min(S.shape[0], S.size)
+    if S.size > 0:
+        S = S[np.isfinite(S[:, 1]), :]
+        if S.shape[0] < M:
+            warn(
+                "dgm1 has points with non-finite death times;"+
+                "ignoring those points"
+            )
+            M = S.shape[0]
+    T = np.array(dgm2)
+    N = min(T.shape[0], T.size)
+    if T.size > 0:
+        T = T[np.isfinite(T[:, 1]), :]
+        if T.shape[0] < N:
+            warn(
+                "dgm2 has points with non-finite death times;"+
+                "ignoring those points"
+            )
+            N = T.shape[0]
+
+    if M == 0:
+        S = np.array([[0, 0]])
+        M = 1
+    if N == 0:
+        T = np.array([[0, 0]])
+        N = 1
+    # Compute CSM between S and dgm2, including points on diagonal
+    DUL  = np.abs(S[:, 0][:, None] - T[:, 0][None, :])
+    DUL += np.abs(S[:, 1][:, None] - T[:, 1][None, :])
+
+    # Put diagonal elements into the matrix
+    D = np.zeros((M+N, M+N))
+    np.fill_diagonal(D, 0)
+    D[0:M, 0:N] = DUL
+    UR = np.inf*np.ones((M, M))
+    np.fill_diagonal(UR, S[:, 1]-S[:, 0])
+    D[0:M, N:N+M] = UR
+    UL = np.inf*np.ones((N, N))
+    np.fill_diagonal(UL, T[:, 1]-T[:, 0])
+    D[M:N+M, 0:N] = UL
+
+    # Step 2: Run the hungarian algorithm
+    matchi, matchj = optimize.linear_sum_assignment(D)
+    matchdist = np.sum(D[matchi, matchj])
+
+    if matching:
+        matchidx = [(i, j) for i, j in zip(matchi, matchj)]
+        ret = np.zeros((len(matchidx), 3))
+        ret[:, 0:2] = np.array(matchidx)
+        ret[:, 2] = D[matchi, matchj]
+        # Indicate diagonally matched points
+        ret[ret[:, 0] >= M, 0] = -1
+        ret[ret[:, 1] >= N, 1] = -1
+        # Exclude diagonal to diagonal
+        ret = ret[ret[:, 0] + ret[:, 1] != -2, :] 
+        return matchdist, ret
+
+    return matchdist
+
+
+
+def wasserstein_matching(dgm1, dgm2, matching, labels=["dgm1", "dgm2"], ax=None):
+    """ Visualize Wasserstein matching between two diagrams
+
+    Parameters
+    ===========
+
+    dgm1: array
+        A diagram
+    dgm2: array
+        A diagram
+    matching: ndarray(Mx+Nx, 3)
+        A list of correspondences in an optimal matching, as well as their distance, where:
+        * First column is index of point in first persistence diagram, or -1 if diagonal
+        * Second column is index of point in second persistence diagram, or -1 if diagonal
+        * Third column is the distance of each matching
+    labels: list of strings
+        names of diagrams for legend. Default = ["dgm1", "dgm2"], 
+    ax: matplotlib Axis object
+        For plotting on a particular axis.
+
+    Examples
+    ==========
+
+    bn_matching, matchidx = wasserstien(A_h1, B_h1, matching=True)
+    wasserstein_matching(A_h1, B_h1, matchidx)
+
+    """
+    ax = ax or plt.gca()
+    if dgm1.size == 0:
+        dgm1 = np.array([[0, 0]])
+    if dgm2.size == 0:
+        dgm2 = np.array([[0, 0]])
+    for [i, j, d] in matching:
+        i = int(i)
+        j = int(j)
+        if i != -1 or j != -1: # At least one point is a non-diagonal point
+            if i == -1:
+                [b, d] = dgm2[j, :]
+                plt.plot([dgm2[j, 0], (b+d)/2], [dgm2[j, 1], (b+d)/2], "g")
+            elif j == -1:
+                [b, d] = dgm1[i, :]
+                ax.plot([dgm1[i, 0], (b+d)/2], [dgm1[i, 1], (b+d)/2], "g")
+            else:
+                ax.plot([dgm1[i, 0], dgm2[j, 0]], [dgm1[i, 1], dgm2[j, 1]], "g")
+
+    plot_diagrams([dgm1, dgm2], labels=labels, ax=ax)
