@@ -4,13 +4,15 @@ import matplotlib.pyplot as plt
 from utils import draw_curve, plot_diagrams
 
 @jit(nopython=True)
-def delete_repeats(x):
+def delete_repeats(x, circular=False):
     xret = []
     for i in range(len(x)):
         if i == 0:
             xret.append(x[i])
         elif x[i] != x[i-1]:
             xret.append(x[i])
+    if circular and len(xret) > 1 and xret[0] == xret[-1]:
+        xret.pop()
     return np.array(xret)
 
 @jit(nopython=True)
@@ -33,7 +35,7 @@ def get_crit_timeseries(x, circular=False):
         A parallel array indicating local min (-1) or local max (+1)
     """
     ## Step 1: Merge adjacent points that are equal
-    x = delete_repeats(x)
+    x = delete_repeats(x, circular=circular)
 
     ## Step 2: Find critical points
     y = []
@@ -370,7 +372,7 @@ class MergeTree(object):
             if use_grid:
                 plt.grid()
 
-    def init_from_timeseries(self, y, include_essential=False):
+    def init_from_timeseries(self, y, include_essential=False, circular=False):
         """
         Uses union find to make a merge tree object from the time series x
         (NOTE: This code is pretty general and could work to create merge trees
@@ -382,6 +384,8 @@ class MergeTree(object):
             1D array representing the time series
         include_essential: bool
             Whether to include the essential class
+        circular: boolean
+            Whether to assume that the domain wraps around circularly
 
         Returns
         -------
@@ -403,15 +407,17 @@ class MergeTree(object):
             #Find the oldest representatives of the neighbors that
             #are already alive
             for di in [-1, 1]: #Neighbor set is simply left/right
-                if i+di >= 0 and i+di < N:
-                    if idxorder[i+di] < idxorder[i]:
-                        neighbs.append(unionfind_root(pointers, i+di))
+                if circular or (i+di >= 0 and i+di < N):
+                    idx = i + di
+                    if circular:
+                        idx = idx % N
+                    if idxorder[idx] < idxorder[i]:
+                        neighbs.append(unionfind_root(pointers, idx))
             if len(neighbs) == 0:
                 #If none of this point's neighbors are alive yet, this
                 #point will become alive with its own class
                 leaves[i] = MergeNode(y[i], i)
                 representatives[i] = leaves[i]
-                self.root = representatives[i]
             else:
                 #Find the oldest class, merge earlier classes with this class,
                 #and record the merge events and birth/death times
@@ -429,11 +435,11 @@ class MergeTree(object):
                                 leaves[n].birth_death = (y[n], y[i])
                                 # Create new node
                                 node = MergeNode(y[i], i)
+                                self.root = node
                                 left_right = [representatives[n] for n in neighbs]
                                 if left_right[0].x > left_right[1].x:
                                     left_right = left_right[::-1]
                                 node.children = left_right
-                                self.root = node
                                 #Change the representative for this class to be the new node
                                 representatives[oldest_neighb] = node
                         unionfind_union(pointers, oldest_neighb, n, idxorder)
