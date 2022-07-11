@@ -53,7 +53,9 @@ def dpw(x, y):
     for i in range(1, M+1):
         for j in range(1, N+1):
             # First try matching the last point in the L1 sum
-            D[i, j] = np.abs(x[i-1]-y[j-1]) + D[i-1, j-1]
+            # This should only be done if the last points are both mins or both maxes
+            if xs[i-1] == ys[i-1]:
+                D[i, j] = np.abs(x[i-1]-y[j-1]) + D[i-1, j-1]
             # Now try all other deletion possibilities
             for k, l in [[0, 2], [2, 0], [2, 2]]:
                 if i >= k and j >= l:
