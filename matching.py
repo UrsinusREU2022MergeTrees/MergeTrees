@@ -71,7 +71,6 @@ def dpw(x, y):
                     if res < D[i, j]:
                         D[i, j] = res
                         back[i][j] = [k, l]
-    
     ## Step 4: Do backtracing 
     i = M
     j = N
@@ -109,8 +108,14 @@ def dpw(x, y):
                 ydel[-1][1] = ynext[1]
             else:
                 ydel.append(ynext)
-    xdel = np.array(xdel, int_)
-    ydel = np.array(ydel, int_)
+    if len(xdel) == 0:
+        xdel = np.zeros((0,0), int_)
+    else:
+        xdel = np.array(xdel, int_)
+    if len(ydel) == 0:
+        ydel = np.zeros((0,0), int_)
+    else:
+        ydel = np.array(ydel, int_)
     return D[-1, -1], xdel, ydel
 
 
