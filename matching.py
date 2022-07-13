@@ -3,8 +3,8 @@ from numba import jit
 from numba.types import int_, float32
 from mergetree import *
 
-@jit("Tuple((f4,i8[:,:],i8[:,:]))(f8[:],f8[:])", nopython=True)
-def dpw(x, y):
+@jit("Tuple((f4,i8[:,:],i8[:,:]))(f8[:],f8[:],b1)", nopython=True)
+def dpw(x, y, circular=False):
     """
     Compute dynamic persistence warping (DPW) between two time series
 
@@ -22,8 +22,8 @@ def dpw(x, y):
     list of [int, int]: Ranges to delete in y critical time series
     """
     ## Step 1: Setup critical point time series and costs
-    x, xs = get_crit_timeseries(x, circular=True)
-    y, ys = get_crit_timeseries(y, circular=True)
+    x, xs = get_crit_timeseries(x, circular=circular)
+    y, ys = get_crit_timeseries(y, circular=circular)
     M = x.size
     N = y.size
     # Use cumulative sums for quick deletion cost lookup
@@ -54,7 +54,7 @@ def dpw(x, y):
         for j in range(1, N+1):
             # First try matching the last point in the L1 sum
             # This should only be done if the last points are both mins or both maxes
-            if xs[i-1] == ys[i-1]:
+            if xs[i-1] == ys[j-1]:
                 D[i, j] = np.abs(x[i-1]-y[j-1]) + D[i-1, j-1]
             # Now try all other deletion possibilities
             for k, l in [[0, 2], [2, 0], [2, 2]]:

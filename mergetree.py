@@ -40,15 +40,23 @@ def get_crit_timeseries(x, circular=False):
     ## Step 2: Find critical points
     y = []
     signs = []
-    for i in range(x.size):
-        neighbs = [n for n in [i-1, i+1] if circular or (n >= 0 and n < x.size)]
-        if circular:
-            neighbs = [n % x.size for n in neighbs]
-        xn = [np.sign(x[i]-x[n]) for n in neighbs]
-        # It's an endpoint or neighbors are both same sign
-        if len(xn) == 1 or np.prod(np.array(xn)) == 1: 
-            y.append(x[i])
-            signs.append(xn[0])
+    if x.size > 1:
+        for i in range(x.size):
+            neighbs = [n for n in [i-1, i+1] if circular or (n >= 0 and n < x.size)]
+            if circular:
+                neighbs = [n % x.size for n in neighbs]
+            xn = [np.sign(x[i]-x[n]) for n in neighbs]
+            # If two neighbors are both the same sign
+            if len(xn) == 2 and np.prod(np.array(xn)) == 1: 
+                y.append(x[i])
+                signs.append(xn[0])
+            elif not circular:
+                if i == 0 and x[1] > x[0]:
+                    y.append(x[i])
+                    signs.append(-1.0)
+                if i == x.size - 1 and x[-2] > x[-1]:
+                    y.append(x[-1])
+                    signs.append(-1.0)
     return np.array(y), np.array(signs)
 
 class MergeNode(object):
