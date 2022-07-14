@@ -4,9 +4,9 @@ from numba.types import int_, float32
 from mergetree import *
 
 @jit("Tuple((f4,i8[:,:],i8[:,:]))(f8[:],f8[:],b1)", nopython=True)
-def dpw(x, y, circular=False):
+def dope_match(x, y, circular=False):
     """
-    Compute dynamic persistence warping (DPW) between two time series
+    Compute Dynamic Ordered Persistence Editing (DOPE) between two time series
 
     Parameters
     ----------
@@ -117,6 +117,120 @@ def dpw(x, y, circular=False):
     else:
         ydel = np.array(ydel, int_)
     return D[-1, -1], xdel, ydel
+
+def plot_dope_matching(x, y, xc, xs, yc, ys, cost, xdel, ydel):
+    ## Step 1: Show critical points deleted from x
+    xdel_plot = plt.subplot(334)
+    plt.plot(xc)
+    ilast = 0
+    xnew = []
+    xnew_idx = []
+    xidx = np.arange(xc.size)
+    xcost = 0
+    for rg in xdel:
+        xcost += np.sum(xc[rg[0]:rg[1]]*xs[rg[0]:rg[1]])
+        plt.scatter(np.arange(rg[0], rg[1]), xc[rg[0]:rg[1]], c='C3')
+        xnew = np.concatenate((xnew, xc[ilast:rg[0]]))
+        xnew_idx = np.concatenate((xnew_idx, xidx[ilast:rg[0]]))
+        ilast = rg[1]
+    xnew = np.concatenate((xnew, xc[ilast::]))
+    xnew_idx = np.array(np.concatenate((xnew_idx, xidx[ilast::])), dtype=int)
+    plt.title("x critical points, Del Cost={:.3f}".format(xcost))
+
+    ## Step 2: Show critical points deleted from y
+    ydel_plot = plt.subplot(335)
+    plt.plot(yc, c='C1')
+    ilast = 0
+    ynew = []
+    ynew_idx = []
+    yidx = np.arange(yc.size)
+    ycost = 0
+    for rg in ydel:
+        ycost += np.sum(yc[rg[0]:rg[1]]*ys[rg[0]:rg[1]])
+        plt.scatter(np.arange(rg[0], rg[1]), yc[rg[0]:rg[1]], c='C3')
+        ynew = np.concatenate((ynew, yc[ilast:rg[0]]))
+        ynew_idx = np.concatenate((ynew_idx, yidx[ilast:rg[0]]))
+        ilast = rg[1]
+    ynew = np.concatenate((ynew, yc[ilast::]))
+    ynew_idx = np.array(np.concatenate((ynew_idx, yidx[ilast::])), dtype=int)
+    plt.title("y critical points, Del Cost={:.3f}".format(ycost))
+
+    ## Step 3: Show aligned points
+    match_plot = plt.subplot(336)
+    l1cost = np.sum(np.abs(xnew-ynew))
+    plt.plot(xnew)
+    plt.plot(ynew, linestyle='--')
+    plt.title("L1 Aligned Points, Cost={:.3f}".format(l1cost))
+
+    ## Step 4: Plot original time series
+    plt.subplot2grid((3, 3), (0, 0), colspan=3)
+    plt.plot(x)
+    plt.plot(y, c='C1')
+    plt.title("Original Time Series, Computed cost: {:.3f}, Verified Cost {:.3f}".format(cost, xcost + ycost + l1cost))
+    plt.legend(["x", "y"])
+
+    ## Step 5: Try to construct wasserstein matching from dope matching
+    MTx = MergeTree(xc)
+    MTy = MergeTree(yc)
+
+    xb2pidx = {x:i for i, x in enumerate(MTx.PDIdx[:, 0])}
+    yb2pidx = {y:j for j, y in enumerate(MTy.PDIdx[:, 0])}
+    b2dx = {b:d for [b, d] in MTx.PDIdx}
+    d2bx = {d:b for [b, d] in MTx.PDIdx}
+    b2dy = {b:d for [b, d] in MTy.PDIdx}
+    d2by = {d:b for [b, d] in MTy.PDIdx}
+
+    ## Look at what was matched
+    mymatching = []
+    for i, (x, y) in enumerate(zip(xnew_idx, ynew_idx)):
+        bx, dx = None, None
+        by, dy = None, None
+        if x in b2dx:
+            if b2dx[x] in xnew_idx:
+                bx = x
+                dx = b2dx[x]
+        elif x in d2bx:
+            if d2bx[x] in xnew_idx:
+                dx = x
+                bx = d2bx[x]
+        if y in b2dy:
+            if b2dy[y] in ynew_idx:
+                by = y
+                dy = b2dy[y]
+        elif y in d2by:
+            if d2by[y] in ynew_idx:
+                dy = y
+                by = d2by[y]
+        if bx and by and dx and dy:
+            mymatching.append([xb2pidx[bx], yb2pidx[by], np.abs(xc[dx]-xc[bx])+np.abs(yc[dy]-yc[by])])
+        else:
+            match_plot.scatter([i, i], [xc[x], yc[y]], s=100, marker='x', c='r')
+    
+    for rg in xdel:
+        xchunk = xidx[rg[0]:rg[1]]
+        for x in xchunk:
+            if x in b2dx:
+                if b2dx[x] in xchunk:
+                    mymatching.append([xb2pidx[x], -1, b2dx[x]-x])
+            elif not x in d2bx:
+                xdel_plot.scatter([x], [xc[x]], s=100, marker='x', c='r')
+    
+    for rg in ydel:
+        ychunk = yidx[rg[0]:rg[1]]
+        for y in ychunk:
+            if y in b2dy:
+                if b2dy[y] in ychunk:
+                    mymatching.append([-1, yb2pidx[y], b2dy[y]-y])
+            elif not y in d2by:
+                ydel_plot.scatter([y], [yc[y]], s=100, marker='x', c='r')
+        
+    dist, wassmatching = wasserstein(MTx.PD, MTy.PD, True)
+    plt.subplot(337)
+    plot_wasserstein_matching(MTx.PD, MTy.PD, wassmatching)
+    plt.title("Wasserstein Matching")
+    plt.subplot(338)
+    plot_wasserstein_matching(MTx.PD, MTy.PD, mymatching)
+    plt.title("My Matching")
 
 
 def weight_sequence_distance(w1, w2):
@@ -262,7 +376,7 @@ def wasserstein(dgm1, dgm2, matching=False):
 
 
 
-def wasserstein_matching(dgm1, dgm2, matching, labels=["dgm1", "dgm2"], ax=None):
+def plot_wasserstein_matching(dgm1, dgm2, matching, labels=["dgm1", "dgm2"], ax=None):
     """ Visualize Wasserstein matching between two diagrams
 
     Parameters

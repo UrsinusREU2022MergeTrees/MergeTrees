@@ -132,7 +132,7 @@ class MergeNode(object):
             else:
                 child.inorder(idx)
 
-    def get_rep_timeseries(self, ys):
+    def get_rep_timeseries(self, ys, signs):
         """
         Create a piecewise linear function that is 
         obtained from an inorder traversal of the y
@@ -142,19 +142,18 @@ class MergeNode(object):
         ----------
         ys: list of float
             Time series that I'm building
-
-        Returns
-        -------
-        ndarray(N): Time series representing piecewise linear function,
-        with as many samples as there are nodes in the tree
+        signs: list of [-1, 1]
+            A parallel list indicating local min (-1) or local max (+1)
         """
         if len(self.children) == 0:
             ys.append(self.y)
+            signs.append(-1)
         for i, child in enumerate(sorted(self.children, key=lambda c: c.x)):
-            child.get_rep_timeseries(ys)
+            child.get_rep_timeseries(ys, signs)
             if i < len(self.children)-1:
                 # Put the max in between every adjacent pair of children
-                ys.append(self.y) 
+                ys.append(self.y)
+                signs.append(1)
 
     def get_eps_saddle_pairs(self, eps, pairs, depth):
         """
@@ -258,9 +257,23 @@ def unionfind_union(pointers, u, v, idxorder):
         pointers[usecond] = ufirst
 
 class MergeTree(object):
-    def __init__(self):
-        self.root = None
-        self.PD = np.array([[]])
+    def __init__(self, x=np.array([])):
+        """
+        Construct a new merge tree
+
+        Parameters
+        ----------
+        x: ndarray(N)
+            Time series with which to initialize a merge tree.
+            If left blank, initialize an empty merge tree.
+
+        """
+        if x.size > 0:
+            self.init_from_timeseries(x)
+        else:
+            self.root = None
+            self.PD = np.array([[]])
+            self.PDIdx = np.array([[]], dtype=int)
 
     def get_weight_sequence(self):
         """
@@ -280,17 +293,22 @@ class MergeTree(object):
         """
         Return a piecewise linear function that is 
         obtained from an inorder traversal of the y
-        coordinates of the nodes in this tree
+        coordinates of the nodes in this tree, as well as
+        a parallel array that indicates whether the points
+        are mins or maxes
         
         Returns
         -------
         ndarray(N): Time series representing piecewise linear function,
-        with as many samples as there are nodes in the tree
+        with as many samples as there are nodes in the tree,
+
+        ndarray(N): A parallel array of signs
         """
         ys = []
+        signs = []
         if self.root:
-            self.root.get_rep_timeseries(ys)
-        return np.array(ys)
+            self.root.get_rep_timeseries(ys, signs)
+        return np.array(ys), np.array(signs)
 
     def collapse_saddles(self, eps):
         """
@@ -410,6 +428,7 @@ class MergeTree(object):
         representatives = {} # Nodes that represent a connected component
         leaves = {} # Leaf nodes
         I = [] #Persistence diagram
+        IIdx = [] # Paired indices
         for i in idx: # Go through each point in the time series in height order
             neighbs = []
             #Find the oldest representatives of the neighbors that
@@ -440,6 +459,7 @@ class MergeTree(object):
                             if y[i] > y[n]:
                                 # Record persistence information
                                 I.append([y[n], y[i]])
+                                IIdx.append([n, i])
                                 leaves[n].birth_death = (y[n], y[i])
                                 # Create new node
                                 node = MergeNode(y[i], i)
@@ -457,7 +477,8 @@ class MergeTree(object):
             idx2 = np.argmax(y)
             [b, d] = [y[idx1], y[idx2]]
             I.append([b, d])
+            IIdx.append([idx1, idx2])
             leaves[idx1].birth_death = (b, d)
-        PD = np.array(I)
-        self.PD = PD
-        return PD
+        self.PD = np.array(I)
+        self.PDIdx = np.array(IIdx, dtype=int)
+        return self.PD, self.PDIdx
