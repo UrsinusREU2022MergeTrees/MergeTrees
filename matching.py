@@ -182,8 +182,6 @@ def plot_dope_matching(x, y, xc, xs, yc, ys, cost, xdel, ydel, circular):
     b2dy = {b:d for [b, d] in MTy.PDIdx}
     d2by = {d:b for [b, d] in MTy.PDIdx}
 
-    print("b2dx", b2dx)
-
     ## Look at what was matched
     xnew_idx_idx = {x:idx for idx, x in enumerate(xnew_idx)}
     ynew_idx_idx = {y:idx for idx, y in enumerate(ynew_idx)}
@@ -280,6 +278,10 @@ def plot_dope_matching(x, y, xc, xs, yc, ys, cost, xdel, ydel, circular):
     dist, wassmatching = wasserstein(MTx.PD, MTy.PD, True)
     plt.subplot(337)
     plot_wasserstein_matching(MTx.PD, MTy.PD, wassmatching)
+    for i, [b, d] in enumerate(MTx.PD):
+        plt.text(b-0.2, d, "{}".format(i), c='C0')
+    for i, [b, d] in enumerate(MTy.PD):
+        plt.text(b-0.2, d, "{}".format(i), c='C1')
     plt.title("Wasserstein Matching, Cost={:.3f}".format(dist))
     plt.subplot(338)
     plot_wasserstein_matching(MTx.PD, MTy.PD, mymatching)
@@ -287,7 +289,7 @@ def plot_dope_matching(x, y, xc, xs, yc, ys, cost, xdel, ydel, circular):
         plt.text(b-0.2, d, "{}".format(i), c='C0')
     for i, [b, d] in enumerate(MTy.PD):
         plt.text(b-0.2, d, "{}".format(i), c='C1')
-    plt.title("My Matching")
+    plt.title("Partial DOPE->Wasserstein Matching")
 
 
 def weight_sequence_distance(w1, w2):
