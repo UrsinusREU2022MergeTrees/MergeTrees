@@ -118,7 +118,7 @@ def dope_match(x, y, circular=False):
         ydel = np.array(ydel, int_)
     return D[-1, -1], xdel, ydel
 
-def plot_dope_matching(x, y, xc, xs, yc, ys, cost, xdel, ydel):
+def plot_dope_matching(x, y, xc, xs, yc, ys, cost, xdel, ydel, circular):
     ## Step 1: Show critical points deleted from x
     xdel_plot = plt.subplot(334)
     plt.plot(xc)
@@ -170,8 +170,10 @@ def plot_dope_matching(x, y, xc, xs, yc, ys, cost, xdel, ydel):
     plt.legend(["x", "y"])
 
     ## Step 5: Try to construct wasserstein matching from dope matching
-    MTx = MergeTree(xc)
-    MTy = MergeTree(yc)
+    MTx = MergeTree()
+    MTx.init_from_timeseries(xc, circular=circular)
+    MTy = MergeTree()
+    MTy.init_from_timeseries(yc, circular=circular)
 
     xb2pidx = {x:i for i, x in enumerate(MTx.PDIdx[:, 0])}
     yb2pidx = {y:j for j, y in enumerate(MTy.PDIdx[:, 0])}
@@ -180,56 +182,111 @@ def plot_dope_matching(x, y, xc, xs, yc, ys, cost, xdel, ydel):
     b2dy = {b:d for [b, d] in MTy.PDIdx}
     d2by = {d:b for [b, d] in MTy.PDIdx}
 
+    print("b2dx", b2dx)
+
     ## Look at what was matched
+    xnew_idx_idx = {x:idx for idx, x in enumerate(xnew_idx)}
+    ynew_idx_idx = {y:idx for idx, y in enumerate(ynew_idx)}
     mymatching = []
     for i, (x, y) in enumerate(zip(xnew_idx, ynew_idx)):
+        if x in xb2pidx:
+            match_plot.text(i-0.4, xnew[i], "{}".format(xb2pidx[x]), c='C0')
+        elif x in d2bx and d2bx[x] in xb2pidx:
+            match_plot.text(i-0.4, xnew[i], "{}".format(xb2pidx[d2bx[x]]), c='C0')
+        else:
+            match_plot.text(i-0.4, xnew[i], "N", c='C0')
+        if y in yb2pidx:
+            match_plot.text(i+0.2, ynew[i], "{}".format(yb2pidx[y]), c='C1')
+        elif y in d2by and d2by[y] in yb2pidx:
+            match_plot.text(i+0.2, ynew[i], "{}".format(yb2pidx[d2by[y]]), c='C1')
+        else:
+            match_plot.text(i+0.2, ynew[i], "N", c='C1')
         bx, dx = None, None
         by, dy = None, None
-        if x in b2dx:
-            if b2dx[x] in xnew_idx:
-                bx = x
-                dx = b2dx[x]
-        elif x in d2bx:
-            if d2bx[x] in xnew_idx:
-                dx = x
-                bx = d2bx[x]
-        if y in b2dy:
-            if b2dy[y] in ynew_idx:
-                by = y
-                dy = b2dy[y]
-        elif y in d2by:
-            if d2by[y] in ynew_idx:
-                dy = y
-                by = d2by[y]
-        if bx and by and dx and dy:
-            mymatching.append([xb2pidx[bx], yb2pidx[by], np.abs(xc[dx]-xc[bx])+np.abs(yc[dy]-yc[by])])
+        all_found = False
+        if xs[x] == -1: 
+            # Local min
+            bx = x
+            by = y
+            # Find paired death and check coordinates
+            if x in b2dx and b2dx[x] in xnew_idx_idx:
+                dxidx = xnew_idx_idx[b2dx[x]]
+                if y in b2dy and b2dy[y] in ynew_idx_idx:
+                    if dxidx == ynew_idx_idx[b2dy[y]]:
+                        dx = b2dx[x]
+                        dy = b2dy[y]
+                        all_found = True
+        else:
+            # Local max
+            dx = x
+            dy = y
+            # Find paired birth and check coordinates
+            if x in d2bx and d2bx[x] in xnew_idx_idx:
+                bxidx = xnew_idx_idx[d2bx[x]]
+                if y in d2by and d2by[y] in ynew_idx_idx:
+                    if bxidx == ynew_idx_idx[d2by[y]]:
+                        bx = d2bx[x]
+                        by = d2by[y]
+                        all_found = True
+            
+        if all_found:
+            if xs[x] == -1:
+                mymatching.append([xb2pidx[bx], yb2pidx[by], np.abs(xc[dx]-xc[bx])+np.abs(yc[dy]-yc[by])])
         else:
             match_plot.scatter([i, i], [xc[x], yc[y]], s=100, marker='x', c='r')
     
+    for x in xidx:
+        if x in xb2pidx:
+            xdel_plot.text(x+0.3, xc[x], "{}".format(xb2pidx[x]), c='C0')
+        elif x in d2bx and d2bx[x] in xb2pidx:
+            xdel_plot.text(x+0.3, xc[x], "{}".format(xb2pidx[d2bx[x]]), c='C0')
+        else:
+            xdel_plot.text(x+0.3, xc[x], "N", c='C0')
     for rg in xdel:
         xchunk = xidx[rg[0]:rg[1]]
         for x in xchunk:
+            found = False
             if x in b2dx:
                 if b2dx[x] in xchunk:
                     mymatching.append([xb2pidx[x], -1, b2dx[x]-x])
-            elif not x in d2bx:
+                    found = True
+            elif x in d2bx:
+                if d2bx[x] in xchunk:
+                    found=True
+            if not found:
                 xdel_plot.scatter([x], [xc[x]], s=100, marker='x', c='r')
     
+    for y in yidx:
+        if y in yb2pidx:
+            ydel_plot.text(y+0.3, yc[y], "{}".format(yb2pidx[y]), c='C1')
+        elif y in d2by and d2by[y] in yb2pidx:
+            ydel_plot.text(y+0.3, yc[y], "{}".format(yb2pidx[d2by[y]]), c='C1')
+        else:
+            ydel_plot.text(y+0.3, yc[y], "N", c='C1')
     for rg in ydel:
         ychunk = yidx[rg[0]:rg[1]]
         for y in ychunk:
+            found = False
             if y in b2dy:
                 if b2dy[y] in ychunk:
                     mymatching.append([-1, yb2pidx[y], b2dy[y]-y])
-            elif not y in d2by:
+                    found = True
+            elif y in d2by:
+                if d2by[y] in ychunk:
+                    found = True
+            if not found:
                 ydel_plot.scatter([y], [yc[y]], s=100, marker='x', c='r')
         
     dist, wassmatching = wasserstein(MTx.PD, MTy.PD, True)
     plt.subplot(337)
     plot_wasserstein_matching(MTx.PD, MTy.PD, wassmatching)
-    plt.title("Wasserstein Matching")
+    plt.title("Wasserstein Matching, Cost={:.3f}".format(dist))
     plt.subplot(338)
     plot_wasserstein_matching(MTx.PD, MTy.PD, mymatching)
+    for i, [b, d] in enumerate(MTx.PD):
+        plt.text(b-0.2, d, "{}".format(i), c='C0')
+    for i, [b, d] in enumerate(MTy.PD):
+        plt.text(b-0.2, d, "{}".format(i), c='C1')
     plt.title("My Matching")
 
 

@@ -17,6 +17,7 @@ def plot_diagrams(
     ax_color=np.array([0.0, 0.0, 0.0]),
     diagonal=True,
     lifetime=False,
+    equal=True,
     legend=True,
     show=False,
     ax=None
@@ -53,6 +54,7 @@ def plot_diagrams(
     lifetime: bool, default is False. If True, diagonal is turned to False.
         Plot life time of each point instead of birth and death. 
         Essentially, visualize (x, y-x).
+    equal: bool, default is True.  If True, plot axes equal
     legend: bool, default is True
         If true, show the legend.
     show: bool, default is False
@@ -152,7 +154,8 @@ def plot_diagrams(
 
     ax.set_xlim([x_down, x_up])
     ax.set_ylim([y_down, y_up])
-    ax.set_aspect('equal', 'box')
+    if equal:
+        ax.set_aspect('equal', 'box')
 
     if title is not None:
         ax.set_title(title)
