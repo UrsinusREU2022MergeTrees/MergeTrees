@@ -70,10 +70,10 @@ def plot_wasserstein_matching(dgm1, dgm2, matching, labels=["dgm1", "dgm2"],
                     plt.text(x, y, "({}".format(i), c=colors[0])
                     plt.text(x+0.2, y, ",{})".format(j), c=colors[1])
 
-def plot_delete_move(x_orig, idx1, idx2, tmax=1):
+def plot_delete_move(x_orig, idx1, idx2, h=None, tmax=1):
     """
-    Show what happens along a vertical trajectory moving a single
-    critical point to the height of the one next to it
+    Show what happens along a vertical trajectory moving 
+    critical points to a target height
 
     Parameters
     ----------
@@ -84,8 +84,10 @@ def plot_delete_move(x_orig, idx1, idx2, tmax=1):
     idx2: int
         Index of point that's staying still, assumed to be
         either directly to the left or right of idx1
+    h: float
+        Target height of both points.  If None, make it the height of the second point
     tmax: float
-        How far along its trajectory to move the point.  0 is beginning, 1 is end
+        How far along its trajectory to move the points.  0 is beginning, 1 is end
     """
     N = x_orig.size
     assert(idx1 >= 0)
@@ -93,6 +95,9 @@ def plot_delete_move(x_orig, idx1, idx2, tmax=1):
     assert(idx1 < N)
     assert(idx2 < N)
     assert(abs(idx1-idx2) == 1) # Must be adjacent!
+
+    if h is None:
+        h = x_orig[idx2]
     
     ## Step 1: Construct time series that results from deleting these two points
     ## as well as the time series that results from moving the mobile point
@@ -103,7 +108,8 @@ def plot_delete_move(x_orig, idx1, idx2, tmax=1):
     x_del = np.concatenate((x_orig[0:idxmin], x_orig[idxmin+2::]))
 
     x_final = np.array(x_orig)
-    x_final[idx1] = tmax*(x_final[idx2]) + (1-tmax)*x_final[idx1]
+    for idx in [idx1, idx2]:
+        x_final[idx] = tmax*h + (1-tmax)*x_orig[idx]
     idx_final = np.arange(x_final.size)
 
     ## Step 2: Compute merge trees and persistence diagrams of 
@@ -172,7 +178,7 @@ def plot_delete_move(x_orig, idx1, idx2, tmax=1):
                 ax.text(idx_this[i], v+0.02*rg, "{}".format(xb2pidx[d2bx[i]]), c=c)
 
 
-def animate_delete_moves(x_orig, idx1, idx2, tmin=0, tmax=1, n_frames=100, prefix=""):
+def animate_delete_moves(x_orig, idx1, idx2, h=None, tmin=0, tmax=1, n_frames=100, prefix=""):
     """
     Show what happens along a vertical trajectory moving a single
     critical point to the height of the one next to it
@@ -186,6 +192,8 @@ def animate_delete_moves(x_orig, idx1, idx2, tmin=0, tmax=1, n_frames=100, prefi
     idx2: int
         Index of point that's staying still, assumed to be
         either directly to the left or right of idx1
+    h: float
+        Target height of both points.  If None, make it the height of the second point
     tmin: float
         Starting time
     tmax: float
@@ -197,7 +205,7 @@ def animate_delete_moves(x_orig, idx1, idx2, tmin=0, tmax=1, n_frames=100, prefi
     """
     for i, t in enumerate(np.linspace(tmin, tmax, n_frames)):
         plt.clf()
-        plot_delete_move(x_orig, idx1, idx2, tmax=t)
+        plot_delete_move(x_orig, idx1, idx2, h, tmax=t)
         plt.savefig("{}{}.png".format(prefix, i))
 
 
