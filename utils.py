@@ -6,14 +6,70 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
+def check_triangle_inequality(D, do_plot=True):
+    """
+    Exhaustively check the triangle inequality on all
+    triples of points in a dissimilarity matrix
+
+    Parameters
+    ----------
+    D: ndarray(N, N)
+        Dissimilarity matrix
+    do_plot: boolean
+        Whether to plot a histogram of the discrepancies in violated triples
+    
+    Returns
+    -------
+    ndarray(M)
+        A list of all failed discrepancies in violated triples
+    """
+    N = D.shape[0]
+    correct = 0
+    failed = []
+    for i in range(N):
+        for j in range(N):
+            for k in range(N):
+                if D[i, k] + D[k, j] >= D[i, j]:
+                    correct += 1
+                else:
+                    failed.append([i, j, k, D[i, j], D[i, k]+D[k, j]])
+    failed = np.array(failed)
+    if do_plot:
+        if failed.size > 0:
+            plt.hist((failed[:, -2]-failed[:, -1])/failed[:, -2])
+            plt.xlabel("(D(x, y) - (D(x, z) + D(z, y))) / D(x, y)")
+            plt.ylabel("Counts")
+        plt.title("{:.3f} % Failed".format(100*len(failed)/(correct+len(failed))))
+    return failed
+
+def znormalize(x):
+    """
+    Remove the NaN values from a time series and znormalize what's left
+
+    Parameters
+    ----------
+    x: ndarray(N)
+        Input Time series
+    
+    Returns
+    -------
+    y: ndarray(M <= N)
+        Z-normalized time series without NaNs
+    """
+    x = x[~np.isnan(x)]
+    x = x - np.mean(x)
+    return x/np.std(x)
+
 def plot_diagrams(
     diagrams,
     plot_only=None,
     title=None,
     xy_range=None,
     labels=None,
+    markers=None,
+    sizes=None,
+    colors=None,
     colormap="default",
-    size=20,
     ax_color=np.array([0.0, 0.0, 0.0]),
     diagonal=True,
     lifetime=False,
@@ -38,6 +94,15 @@ def plot_diagrams(
     labels: string or list of strings
         Legend labels for each diagram. 
         If none are specified, we use H_0, H_1, H_2,... by default.
+    markers: string or list of strings
+        Markers for each diagram
+        If none are specified, we use dots by default.
+    sizes: int or list of ints
+        Sizes of each marker
+        If none are specified, use 20 by default
+    colors: string or list of strings
+        Colors for each diagram
+        If none are specified, use the default sequence from matplotlib
     colormap: string, default is 'default'
         Any of matplotlib color palettes. 
         Some options are 'default', 'seaborn', 'sequential'. 
@@ -45,8 +110,6 @@ def plot_diagrams(
         .. code:: python
             import matplotlib as mpl
             print(mpl.styles.available)
-    size: numeric, default is 20
-        Pixel size of each point plotted.
     ax_color: any valid matplotlib color type. 
         See [https://matplotlib.org/api/colors_api.html](https://matplotlib.org/api/colors_api.html) for complete API.
     diagonal: bool, default is True
@@ -74,6 +137,15 @@ def plot_diagrams(
     if labels is None:
         # Provide default labels for diagrams if using self.dgm_
         labels = ["$H_{{{}}}$".format(i) for i , _ in enumerate(diagrams)]
+    
+    if markers is None:
+        markers = ["o"]*len(diagrams)
+    
+    if sizes is None:
+        sizes = [20]*len(diagrams)
+
+    if colors is None:
+        colors = ["C{}".format(i) for i in range(len(diagrams))]
 
     if plot_only:
         diagrams = [diagrams[i] for i in plot_only]
@@ -81,6 +153,15 @@ def plot_diagrams(
 
     if not isinstance(labels, list):
         labels = [labels] * len(diagrams)
+    
+    if not isinstance(markers, list):
+        markers = [markers]*len(diagrams)
+    
+    if not isinstance(sizes, list):
+        sizes = [sizes]*len(diagrams)
+    
+    if not isinstance(colors, list):
+        colors = [colors]*len(diagrams)
 
     # Construct copy with proper type of each diagram
     # so we can freely edit them.
@@ -144,10 +225,10 @@ def plot_diagrams(
             dgm[np.isinf(dgm)] = b_inf
 
     # Plot each diagram
-    for dgm, label in zip(diagrams, labels):
+    for dgm, label, marker, size, color in zip(diagrams, labels, markers, sizes, colors):
 
         # plot persistence pairs
-        ax.scatter(dgm[:, 0], dgm[:, 1], size, label=label, edgecolor="none")
+        ax.scatter(dgm[:, 0], dgm[:, 1], size, c=color, label=label, marker=marker)
 
         ax.set_xlabel(xlabel)
         ax.set_ylabel(ylabel)
