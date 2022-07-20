@@ -5,15 +5,36 @@ from utils import draw_curve, plot_diagrams
 
 @jit(nopython=True)
 def delete_repeats(x, circular=False):
+    """
+    Delete repeated points in a sequence in a time series
+
+    Parameters
+    ----------
+    x: ndarray(N)
+        Original time series
+    circular: bool
+        Whether to assume the time series wraps around
+    
+    Returns
+    -------
+    xret: ndarray(M <= N)
+        Filtered time series
+    xret_idx: ndarray(M <= N)
+        Indices in the original time series
+    """
     xret = []
+    xret_idx = []
     for i in range(len(x)):
         if i == 0:
             xret.append(x[i])
+            xret_idx.append(i)
         elif x[i] != x[i-1]:
             xret.append(x[i])
+            xret_idx.append(i)
     if circular and len(xret) > 1 and xret[0] == xret[-1]:
         xret.pop()
-    return np.array(xret)
+        xret_idx.pop()
+    return np.array(xret), np.array(xret_idx)
 
 @jit(nopython=True)
 def get_crit_timeseries(x, circular=False):
@@ -33,12 +54,15 @@ def get_crit_timeseries(x, circular=False):
         A time series with only critical points
     signs: ndarray(M)
         A parallel array indicating local min (-1) or local max (+1)
+    y_idx: ndarray(M)
+        Indices of the critical points in the original time series
     """
     ## Step 1: Merge adjacent points that are equal
-    x = delete_repeats(x, circular=circular)
+    x, x_idx = delete_repeats(x, circular=circular)
 
     ## Step 2: Find critical points
     y = []
+    y_idx = []
     signs = []
     if x.size > 1:
         for i in range(x.size):
@@ -49,15 +73,18 @@ def get_crit_timeseries(x, circular=False):
             # If two neighbors are both the same sign
             if len(xn) == 2 and np.prod(np.array(xn)) == 1: 
                 y.append(x[i])
+                y_idx.append(x_idx[i])
                 signs.append(xn[0])
             elif not circular:
                 if i == 0 and x[1] > x[0]:
                     y.append(x[i])
+                    y_idx.append(x_idx[i])
                     signs.append(-1.0)
                 if i == x.size - 1 and x[-2] > x[-1]:
                     y.append(x[-1])
+                    y_idx.append(x_idx[-1])
                     signs.append(-1.0)
-    return np.array(y), np.array(signs)
+    return np.array(y), np.array(signs), np.array(y_idx)
 
 class MergeNode(object):
     def __init__(self, y, x=None):

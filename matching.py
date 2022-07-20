@@ -23,8 +23,8 @@ def dope_match(x, y, circular=False):
     list of [int, int]: Ranges to delete in y critical time series
     """
     ## Step 1: Setup critical point time series and costs
-    x, xs = get_crit_timeseries(x, circular=circular)
-    y, ys = get_crit_timeseries(y, circular=circular)
+    x, xs, _ = get_crit_timeseries(x, circular=circular)
+    y, ys, _ = get_crit_timeseries(y, circular=circular)
     M = x.size
     N = y.size
     # Use cumulative sums for quick deletion cost lookup

@@ -70,7 +70,7 @@ def plot_wasserstein_matching(dgm1, dgm2, matching, labels=["dgm1", "dgm2"],
                     plt.text(x, y, "({}".format(i), c=colors[0])
                     plt.text(x+0.2, y, ",{})".format(j), c=colors[1])
 
-def plot_delete_move(x_orig, idx1, idx2, h=None, tmax=1):
+def plot_delete_move(x_orig, idx1, idx2, h=None, tmax1=1, tmax2=1):
     """
     Show what happens along a vertical trajectory moving 
     critical points to a target height
@@ -86,8 +86,10 @@ def plot_delete_move(x_orig, idx1, idx2, h=None, tmax=1):
         either directly to the left or right of idx1
     h: float
         Target height of both points.  If None, make it the height of the second point
-    tmax: float
-        How far along its trajectory to move the points.  0 is beginning, 1 is end
+    tmax1: float
+        How far along its trajectory to move the first point.  0 is beginning, 1 is end
+    tmax2: float
+        How far along its trajectory to move the second point.  0 is beginning, 1 is end
     """
     N = x_orig.size
     assert(idx1 >= 0)
@@ -108,7 +110,7 @@ def plot_delete_move(x_orig, idx1, idx2, h=None, tmax=1):
     x_del = np.concatenate((x_orig[0:idxmin], x_orig[idxmin+2::]))
 
     x_final = np.array(x_orig)
-    for idx in [idx1, idx2]:
+    for idx, tmax in zip([idx1, idx2], [tmax1, tmax2]):
         x_final[idx] = tmax*h + (1-tmax)*x_orig[idx]
     idx_final = np.arange(x_final.size)
 
@@ -135,7 +137,7 @@ def plot_delete_move(x_orig, idx1, idx2, h=None, tmax=1):
     ax_orig.plot(x_orig, c='C0')
     ax_orig.scatter(np.arange(len(x_orig)), x_orig, c='C0')
     ax_orig.plot([idxmin, idxmin+1], x_orig[idxmin:idxmin+2], c='C3', linewidth=3)
-    ax_orig.set_title("Height Difference: {:.3f}".format(np.abs(x_orig[idx1]-x_orig[idx2])))
+    ax_orig.set_title("Height Difference: {:.2f}".format(np.abs(x_orig[idx1]-x_orig[idx2])))
     
     ax_final = plt.subplot(232)
     ax_final.plot(x_final, c='C1')
@@ -148,12 +150,12 @@ def plot_delete_move(x_orig, idx1, idx2, h=None, tmax=1):
     ax_del.set_title("Deleted Time Series")
 
     ax_wass_orig_final = plt.subplot(233)
-    ax_wass_orig_final.set_title("Wass Distance: {:.3f}".format(dwass_orig_final))
+    ax_wass_orig_final.set_title("Wass Distance: {:.2f}".format(dwass_orig_final))
     plot_wasserstein_matching(MTOrig.PD, MTFinal.PD, match_orig_final, ax=ax_wass_orig_final, colors=["C0", "C1"], plot_pairs_text=True)
     
     ax_wass_orig_del = plt.subplot(235)
     plot_wasserstein_matching(MTOrig.PD, MTDel.PD, match_orig_del, ax=ax_wass_orig_del, colors=["C0", "C2"], plot_pairs_text=True)
-    ax_wass_orig_del.set_title("Wass Distance: {:.3f}".format(dwass_orig_del))
+    ax_wass_orig_del.set_title("Wass Distance: {:.2f}".format(dwass_orig_del))
     
     for ax in [ax_orig, ax_final, ax_del]:
         ax.set_ylim(lims)
@@ -203,24 +205,31 @@ def animate_delete_moves(x_orig, idx1, idx2, h=None, tmin=0, tmax=1, n_frames=10
     prefix: string
         Prefix of filename of saved animation frames
     """
-    for i, t in enumerate(np.linspace(tmin, tmax, n_frames)):
+    idx = 0
+    for t in np.linspace(tmin, tmax, n_frames//2):
         plt.clf()
-        plot_delete_move(x_orig, idx1, idx2, h, tmax=t)
-        plt.savefig("{}{}.png".format(prefix, i))
+        plot_delete_move(x_orig, idx1, idx2, h, tmax1=t, tmax2=0)
+        plt.savefig("{}{}.png".format(prefix, idx))
+        idx += 1
+    for t in np.linspace(tmin, tmax, n_frames//2):
+        plt.clf()
+        plot_delete_move(x_orig, idx1, idx2, h, tmax1=1, tmax2=t)
+        plt.savefig("{}{}.png".format(prefix, idx))
+        idx += 1
 
 
 
-def plot_dope_matching(x, y, xc, xs, yc, ys, cost, xdel, ydel, circular):
+def plot_dope_matching(x, y, xc, xs, xc_idx, yc, ys, yc_idx, cost, xdel, ydel, plot_matches=True, plot_verified=True):
     """
     Create a plot of a particular dope matching, showing x/y deletions and
-    matchings, and then show the optimal Wasserstein matching between 
-    persistence diagrams, as well as the best inferred Wasserstein matching
-    from the dope matching.  Take care to associate indices of persistence
-    pairs with the time series
+    matchings
     """
     ## Step 1: Show critical points deleted from x
+    lims = [min(np.min(x), np.min(y)), max(np.max(x), np.max(y))]
+    rg = lims[1] - lims[0]
+    lims = [lims[0]-0.1*rg, lims[1]+0.1*rg]
     xdel_plot = plt.subplot(334)
-    plt.plot(xc)
+    xdel_plot.plot(xc)
     ilast = 0
     xnew = []
     xnew_idx = []
@@ -228,17 +237,18 @@ def plot_dope_matching(x, y, xc, xs, yc, ys, cost, xdel, ydel, circular):
     xcost = 0
     for rg in xdel:
         xcost += np.sum(xc[rg[0]:rg[1]]*xs[rg[0]:rg[1]])
-        plt.scatter(np.arange(rg[0], rg[1]), xc[rg[0]:rg[1]], c='C3')
+        xdel_plot.scatter(np.arange(rg[0], rg[1]), xc[rg[0]:rg[1]], c='C3', marker='x', zorder=100)
         xnew = np.concatenate((xnew, xc[ilast:rg[0]]))
         xnew_idx = np.concatenate((xnew_idx, xidx[ilast:rg[0]]))
         ilast = rg[1]
     xnew = np.concatenate((xnew, xc[ilast::]))
     xnew_idx = np.array(np.concatenate((xnew_idx, xidx[ilast::])), dtype=int)
-    plt.title("x critical points, Del Cost={:.3f}".format(xcost))
+    xdel_plot.set_title("x critical points\nDeletion Cost={:.2f}".format(xcost))
+    xdel_plot.set_ylim(lims)
 
     ## Step 2: Show critical points deleted from y
     ydel_plot = plt.subplot(335)
-    plt.plot(yc, c='C1')
+    ydel_plot.plot(yc, c='C1')
     ilast = 0
     ynew = []
     ynew_idx = []
@@ -246,152 +256,41 @@ def plot_dope_matching(x, y, xc, xs, yc, ys, cost, xdel, ydel, circular):
     ycost = 0
     for rg in ydel:
         ycost += np.sum(yc[rg[0]:rg[1]]*ys[rg[0]:rg[1]])
-        plt.scatter(np.arange(rg[0], rg[1]), yc[rg[0]:rg[1]], c='C3')
+        ydel_plot.scatter(np.arange(rg[0], rg[1]), yc[rg[0]:rg[1]], c='C3', marker='x', zorder=100)
         ynew = np.concatenate((ynew, yc[ilast:rg[0]]))
         ynew_idx = np.concatenate((ynew_idx, yidx[ilast:rg[0]]))
         ilast = rg[1]
     ynew = np.concatenate((ynew, yc[ilast::]))
     ynew_idx = np.array(np.concatenate((ynew_idx, yidx[ilast::])), dtype=int)
-    plt.title("y critical points, Del Cost={:.3f}".format(ycost))
+    ydel_plot.set_title("y critical points\nDeletion Cost={:.2f}".format(ycost))
+    ydel_plot.set_ylim(lims)
 
     ## Step 3: Show aligned points
     match_plot = plt.subplot(336)
     l1cost = np.sum(np.abs(xnew-ynew))
-    plt.plot(xnew)
-    plt.plot(ynew, linestyle='--')
-    plt.title("L1 Aligned Points, Cost={:.3f}".format(l1cost))
+    match_plot.plot(xnew)
+    match_plot.plot(ynew)#, linestyle='--')
+    if plot_matches:
+        for i, (xi, yi) in enumerate(zip(xnew, ynew)):
+            plt.plot([i, i], [xi, yi], c='k', linestyle='--')
+            plt.scatter([i, i], [xi, yi], s=20, c='k', zorder=100)
+    match_plot.set_title("L1 Aligned Points\n L1 Alignment Cost={:.2f}".format(l1cost))
+    match_plot.set_ylim(lims)
 
     ## Step 4: Plot original time series
     plt.subplot2grid((3, 3), (0, 0), colspan=3)
     plt.plot(x)
     plt.plot(y, c='C1')
-    plt.title("Original Time Series, Computed cost: {:.3f}, Verified Cost {:.3f}".format(cost, xcost + ycost + l1cost))
+    plt.ylim(lims)
+    title = "Original Time Series, Dope Cost: {:.2f}".format(cost)
+    if plot_verified:
+        title += ", Verified Cost {:.2f}".format(xcost + ycost + l1cost)
+    plt.title(title)
     plt.legend(["x", "y"])
-
-    ## Step 5: Try to construct wasserstein matching from dope matching
-    MTx = MergeTree()
-    MTx.init_from_timeseries(xc, circular=circular)
-    MTy = MergeTree()
-    MTy.init_from_timeseries(yc, circular=circular)
-
-    xb2pidx = {x:i for i, x in enumerate(MTx.PDIdx[:, 0])}
-    yb2pidx = {y:j for j, y in enumerate(MTy.PDIdx[:, 0])}
-    b2dx = {b:d for [b, d] in MTx.PDIdx}
-    d2bx = {d:b for [b, d] in MTx.PDIdx}
-    b2dy = {b:d for [b, d] in MTy.PDIdx}
-    d2by = {d:b for [b, d] in MTy.PDIdx}
-
-    ## Look at what was matched
-    xnew_idx_idx = {x:idx for idx, x in enumerate(xnew_idx)}
-    ynew_idx_idx = {y:idx for idx, y in enumerate(ynew_idx)}
-    mymatching = []
-    for i, (x, y) in enumerate(zip(xnew_idx, ynew_idx)):
-        if x in xb2pidx:
-            match_plot.text(i-0.4, xnew[i], "{}".format(xb2pidx[x]), c='C0')
-        elif x in d2bx and d2bx[x] in xb2pidx:
-            match_plot.text(i-0.4, xnew[i], "{}".format(xb2pidx[d2bx[x]]), c='C0')
-        else:
-            match_plot.text(i-0.4, xnew[i], "N", c='C0')
-        if y in yb2pidx:
-            match_plot.text(i+0.2, ynew[i], "{}".format(yb2pidx[y]), c='C1')
-        elif y in d2by and d2by[y] in yb2pidx:
-            match_plot.text(i+0.2, ynew[i], "{}".format(yb2pidx[d2by[y]]), c='C1')
-        else:
-            match_plot.text(i+0.2, ynew[i], "N", c='C1')
-        bx, dx = None, None
-        by, dy = None, None
-        all_found = False
-        if xs[x] == -1: 
-            # Local min
-            bx = x
-            by = y
-            # Find paired death and check coordinates
-            if x in b2dx and b2dx[x] in xnew_idx_idx:
-                dxidx = xnew_idx_idx[b2dx[x]]
-                if y in b2dy and b2dy[y] in ynew_idx_idx:
-                    if dxidx == ynew_idx_idx[b2dy[y]]:
-                        dx = b2dx[x]
-                        dy = b2dy[y]
-                        all_found = True
-        else:
-            # Local max
-            dx = x
-            dy = y
-            # Find paired birth and check coordinates
-            if x in d2bx and d2bx[x] in xnew_idx_idx:
-                bxidx = xnew_idx_idx[d2bx[x]]
-                if y in d2by and d2by[y] in ynew_idx_idx:
-                    if bxidx == ynew_idx_idx[d2by[y]]:
-                        bx = d2bx[x]
-                        by = d2by[y]
-                        all_found = True
-            
-        if all_found:
-            if xs[x] == -1:
-                mymatching.append([xb2pidx[bx], yb2pidx[by], np.abs(xc[dx]-xc[bx])+np.abs(yc[dy]-yc[by])])
-        else:
-            match_plot.scatter([i, i], [xc[x], yc[y]], s=100, marker='x', c='r')
-    
-    for x in xidx:
-        if x in xb2pidx:
-            xdel_plot.text(x+0.3, xc[x], "{}".format(xb2pidx[x]), c='C0')
-        elif x in d2bx and d2bx[x] in xb2pidx:
-            xdel_plot.text(x+0.3, xc[x], "{}".format(xb2pidx[d2bx[x]]), c='C0')
-        else:
-            xdel_plot.text(x+0.3, xc[x], "N", c='C0')
-    all_xdel = np.array([])
-    if len(xdel):
-        all_xdel = np.concatenate(tuple([np.arange(rg[0], rg[1]) for rg in xdel]))
-    for rg in xdel:
-        xchunk = xidx[rg[0]:rg[1]]
-        for x in xchunk:
-            found = False
-            if x in b2dx:
-                if b2dx[x] in all_xdel:
-                    mymatching.append([xb2pidx[x], -1, b2dx[x]-x])
-                    found = True
-            elif x in d2bx:
-                if d2bx[x] in all_xdel:
-                    found=True
-            if not found:
-                xdel_plot.scatter([x], [xc[x]], s=100, marker='x', c='r')
-    
-    for y in yidx:
-        if y in yb2pidx:
-            ydel_plot.text(y+0.3, yc[y], "{}".format(yb2pidx[y]), c='C1')
-        elif y in d2by and d2by[y] in yb2pidx:
-            ydel_plot.text(y+0.3, yc[y], "{}".format(yb2pidx[d2by[y]]), c='C1')
-        else:
-            ydel_plot.text(y+0.3, yc[y], "N", c='C1')
-    all_ydel = np.array([])
-    if len(ydel) > 0:
-        all_ydel = np.concatenate(tuple([np.arange(rg[0], rg[1]) for rg in ydel]))
-    for rg in ydel:
-        ychunk = yidx[rg[0]:rg[1]]
-        for y in ychunk:
-            found = False
-            if y in b2dy:
-                if b2dy[y] in all_ydel:
-                    mymatching.append([-1, yb2pidx[y], b2dy[y]-y])
-                    found = True
-            elif y in d2by:
-                if d2by[y] in all_ydel:
-                    found = True
-            if not found:
-                ydel_plot.scatter([y], [yc[y]], s=100, marker='x', c='r')
-        
-    dist, wassmatching = wasserstein(MTx.PD, MTy.PD, True)
-    plt.subplot(337)
-    plot_wasserstein_matching(MTx.PD, MTy.PD, wassmatching)
-    for i, [b, d] in enumerate(MTx.PD):
-        plt.text(b-0.2, d, "{}".format(i), c='C0')
-    for i, [b, d] in enumerate(MTy.PD):
-        plt.text(b-0.2, d, "{}".format(i), c='C1')
-    plt.title("Wasserstein Matching, Cost={:.3f}".format(dist))
-    plt.subplot(338)
-    plot_wasserstein_matching(MTx.PD, MTy.PD, mymatching)
-    for i, [b, d] in enumerate(MTx.PD):
-        plt.text(b-0.2, d, "{}".format(i), c='C0')
-    for i, [b, d] in enumerate(MTy.PD):
-        plt.text(b-0.2, d, "{}".format(i), c='C1')
-    plt.title("Partial DOPE->Wasserstein Matching")
+    if plot_matches:
+        for (xidx, yidx) in zip(xnew_idx, ynew_idx):
+            xidx = xc_idx[xidx]
+            yidx = yc_idx[yidx]
+            plt.plot([xidx, yidx], [x[xidx], y[yidx]], c='k', linestyle='--')
+            plt.scatter([xidx, yidx], [x[xidx], y[yidx]], s=20, c='k', zorder=100)
+    plt.tight_layout()
