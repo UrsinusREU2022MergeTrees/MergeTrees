@@ -3,10 +3,11 @@ import matplotlib.pyplot as plt
 from mergetree import *
 from matching import *
 
+[HORIZ, VERT, DIAG] = [0, 1, 2]
 
-def plot_wasserstein_matching(dgm1, dgm2, matching, labels=["dgm1", "dgm2"], 
+def plot_wasserstein_matching(dgm1, dgm2, matching, labels=["dgm1", "dgm2"],
                               markers=["o", "x"], sizes=[20, 40], colors=["C0", "C1"], 
-                              plot_pairs_text=False, ax=None):
+                              plot_pairs_text=False, ax=None, diag_type=[DIAG]):
     """ Visualize Wasserstein matching between two diagrams
 
     Parameters
@@ -33,6 +34,8 @@ def plot_wasserstein_matching(dgm1, dgm2, matching, labels=["dgm1", "dgm2"],
         If true, plot text indicating a tuple of the matched pairs
     ax: matplotlib Axis object
         For plotting on a particular axis.
+    diag_type: int
+        Type of L1 diagonal plot to do (diagonal/horizontal/vertical)
 
     Examples
     ==========
@@ -53,22 +56,38 @@ def plot_wasserstein_matching(dgm1, dgm2, matching, labels=["dgm1", "dgm2"],
         if i != -1 or j != -1: # At least one point is a non-diagonal point
             if i == -1:
                 [b, d] = dgm2[j, :]
-                ax.plot([dgm2[j, 0], (b+d)/2], [dgm2[j, 1], (b+d)/2], "k")
+                x, y = b, d
+                if diag_type == HORIZ:
+                    x, y = d, d
+                elif diag_type == DIAG:
+                    x, y = (b+d)/2, (b+d)/2
+                ax.plot([dgm2[j, 0], x], [dgm2[j, 1], y], "k")
                 if plot_pairs_text:
-                    x, y = dgm2[j, :]
-                    plt.text(x, y, "{}".format(j), c=colors[1])
+                    x, y = 0.5*(dgm2[j, :] + np.array([x, y]))
+                    ax.text(x, y, "{}".format(j), c=colors[1])
             elif j == -1:
                 [b, d] = dgm1[i, :]
-                ax.plot([dgm1[i, 0], (b+d)/2], [dgm1[i, 1], (b+d)/2], "k")
+                x, y = b, b
+                if diag_type == HORIZ:
+                    x, y = d, d
+                elif diag_type == DIAG:
+                    x, y = (b+d)/2, (b+d)/2
+                ax.plot([dgm1[i, 0], x], [dgm1[i, 1], y], "k")
                 if plot_pairs_text:
-                    x, y = dgm1[i, :]
-                    plt.text(x, y, "{}".format(i), c=colors[0])
+                    x, y = 0.5*(dgm1[i, :] + np.array([x, y]))
+                    ax.text(x, y, "{}".format(i), c=colors[0])
             else:
                 ax.plot([dgm1[i, 0], dgm2[j, 0]], [dgm1[i, 1], dgm2[j, 1]], "k")
                 if plot_pairs_text:
-                    x, y = 0.5*(dgm1[i, :] + dgm2[j, :]) + np.array([0.2, 0])
-                    plt.text(x, y, "({}".format(i), c=colors[0])
-                    plt.text(x+0.2, y, ",{})".format(j), c=colors[1])
+                    x, y = 0.5*(dgm1[i, :] + dgm2[j, :])
+                    if diag_type == VERT or diag_type == DIAG:
+                        x += 0.4
+                        y -= 0.2
+                    if diag_type == HORIZ or diag_type == DIAG:
+                        y += 0.3
+                        x -= 0.5
+                    ax.text(x, y, "({}".format(i), c=colors[0])
+                    ax.text(x+0.8, y, ",{})".format(j), c=colors[1])
 
 def plot_delete_move(x_orig, idx1, idx2, h=None, tmax1=1, tmax2=1):
     """
@@ -219,7 +238,107 @@ def animate_delete_moves(x_orig, idx1, idx2, h=None, tmin=0, tmax=1, n_frames=10
 
 
 
-def plot_dope_matching(x, y, xc, xs, xc_idx, yc, ys, yc_idx, cost, xdel, ydel, plot_matches=True, plot_verified=True):
+def plot_delete_figure(x_orig, idx):
+    """
+    Show moving a min up and then moving a max down
+
+    Parameters
+    ----------
+    x_orig: ndarray(N)
+        Time series of critical points
+    idx: int
+        Index of first point in an adjacent pair to delete
+    """
+    h = 0.5*(x_orig[idx-1]+x_orig[idx+2])
+    
+    ## Step 1: Construct time series that result from moving the first point
+    ## and then from moving the second point after that
+    x_mid = np.array(x_orig)
+    x_mid[idx] = h
+
+    x_end = np.array(x_mid)
+    x_end[idx+1] = h
+
+    ## Step 2: Compute merge trees and persistence diagrams of 
+    ## the original time series, the time series with delete points,
+    ## and the final time series, as well as Wasserstein distances between them
+    MTOrig = MergeTree(x_orig)
+    MTMid = MergeTree(x_mid)
+    MTEnd = MergeTree(x_end)
+    dwass_orig_mid, match_orig_mid = wasserstein(MTOrig.PD, MTMid.PD, matching=True)
+    dwass_mid_end, match_mid_end = wasserstein(MTMid.PD, MTEnd.PD, matching=True)
+    
+    ## Step 3: Plot the time series and the Wasserstein matchings
+    """
+    Original TS     Mid TS     Original->Mid TS Wass    
+
+                    End TS     Mid->End TS Wass
+    """
+    mn, mx = np.min(x_orig), np.max(x_orig)
+    rg = mx-mn
+    lims = [mn-1, mx+1]
+
+    ax_orig = plt.subplot(231)
+    ax_orig.plot(x_orig, c='C0')
+    ax_orig.scatter(np.arange(len(x_orig)), x_orig, c='C0')
+    ax_orig.plot([idx, idx+1], x_orig[idx:idx+2], c='C3', linewidth=3)
+    ax_orig.set_title("Height Difference: {}".format(np.abs(x_orig[idx]-x_orig[idx+1])))
+    
+    ax_mid = plt.subplot(232)
+    ax_mid.plot(x_mid, c='C1')
+    ax_mid.scatter(np.arange(len(x_mid)), x_mid, c='C1')
+    ax_mid.set_title("Moving Min Up")
+    ax_mid.arrow(idx, x_orig[idx], 0, h-x_orig[idx]-2, color='C1', head_width=0.6, head_length=1)
+
+    ax_end = plt.subplot(235)
+    ax_end.plot(x_end, c='C2')
+    ax_end.scatter(np.arange(x_end.size), x_end, c='C2')
+    ax_end.set_title("Moving Max Down")
+    ax_end.arrow(idx, x_orig[idx], 0, h-x_orig[idx]-2, color='C1', head_width=0.6, head_length=1)
+    ax_end.arrow(idx+1, x_orig[idx+1], 0, h-x_orig[idx+1]+1, color='C2', head_width=0.6, head_length=1)
+
+    ax_wass_orig_mid = plt.subplot(233)
+    ax_wass_orig_mid.set_title("Wass Original -> Min Up: {}".format(int(dwass_orig_mid)))
+    plot_wasserstein_matching(MTOrig.PD, MTMid.PD, match_orig_mid, ax=ax_wass_orig_mid, colors=["C0", "C1"], plot_pairs_text=True, diag_type=HORIZ, labels=["Original", "Min Up"])
+    
+    ax_wass_mid_end = plt.subplot(236)
+    plot_wasserstein_matching(MTMid.PD, MTEnd.PD, match_mid_end, ax=ax_wass_mid_end, colors=["C1", "C2"], plot_pairs_text=True, diag_type=VERT, labels=["Min Up", "Max Down"])
+    ax_wass_mid_end.set_title("Wass Min Up -> Max Down: {}".format(int(dwass_mid_end)))
+    
+    ax_del = plt.subplot(234)
+    idx_del = np.arange(x_orig.size)
+    idx_del = np.concatenate((idx_del[0:idx], idx_del[idx+2::]))
+    x_del = np.concatenate((x_orig[0:idx], x_orig[idx+2::]))
+    ax_del.plot(idx_del, x_del, c='C4')
+    ax_del.scatter(idx_del, x_del, c='C4')
+    plt.title("Adjacent Pair Deleted")
+
+    for ax in [ax_orig, ax_mid, ax_end, ax_del]:
+        ax.set_xticks([])
+    for ax in [ax_orig, ax_mid, ax_end, ax_del, ax_wass_orig_mid, ax_wass_mid_end]:
+        ax.set_ylim(lims)
+        ax.set_yticks(np.arange(0, np.max(x_orig)+1))
+        ax.grid(True, linestyle='--')
+    for ax in [ax_wass_orig_mid, ax_wass_mid_end]:
+        ax.set_xlim(lims)
+        ax.set_xticks(np.arange(0, np.max(x_orig)+1))
+
+    ## Step 4: Plot labels on original time series corresponding to
+    ## indices in the persistence diagrams
+    for c, (ax, x_this, PDIdx) in enumerate(zip([ax_orig, ax_mid, ax_end],
+                        [x_orig, x_mid, x_end],
+                        [MTOrig.PDIdx, MTMid.PDIdx, MTEnd.PDIdx])):
+        c="C{}".format(c)
+        xb2pidx = {x:i for i, x in enumerate(PDIdx[:, 0])}
+        d2bx = {d:b for [b, d] in PDIdx}
+        for i, v in enumerate(x_this):
+            if i in xb2pidx:
+                ax.text(i, v+0.01*rg, "{}".format(xb2pidx[i]), c=c)
+            elif i in d2bx and d2bx[i] in xb2pidx:
+                ax.text(i, v+0.02*rg, "{}".format(xb2pidx[d2bx[i]]), c=c)
+
+
+def plot_dope_matching(x, y, xc, xs, xc_idx, yc, ys, yc_idx, cost, xdel, ydel, xname="x", yname="y", xcolor="C0", ycolor="C1", plot_matches=True, plot_verified=True):
     """
     Create a plot of a particular dope matching, showing x/y deletions and
     matchings
@@ -229,7 +348,7 @@ def plot_dope_matching(x, y, xc, xs, xc_idx, yc, ys, yc_idx, cost, xdel, ydel, p
     rg = lims[1] - lims[0]
     lims = [lims[0]-0.1*rg, lims[1]+0.1*rg]
     xdel_plot = plt.subplot(334)
-    xdel_plot.plot(xc)
+    xdel_plot.plot(xc, c=xcolor)
     ilast = 0
     xnew = []
     xnew_idx = []
@@ -243,12 +362,12 @@ def plot_dope_matching(x, y, xc, xs, xc_idx, yc, ys, yc_idx, cost, xdel, ydel, p
         ilast = rg[1]
     xnew = np.concatenate((xnew, xc[ilast::]))
     xnew_idx = np.array(np.concatenate((xnew_idx, xidx[ilast::])), dtype=int)
-    xdel_plot.set_title("x critical points\nDeletion Cost={:.2f}".format(xcost))
+    xdel_plot.set_title("{} critical points\nDeletion Cost={:.2f}".format(xname, xcost))
     xdel_plot.set_ylim(lims)
 
     ## Step 2: Show critical points deleted from y
     ydel_plot = plt.subplot(335)
-    ydel_plot.plot(yc, c='C1')
+    ydel_plot.plot(yc, c=ycolor)
     ilast = 0
     ynew = []
     ynew_idx = []
@@ -262,14 +381,14 @@ def plot_dope_matching(x, y, xc, xs, xc_idx, yc, ys, yc_idx, cost, xdel, ydel, p
         ilast = rg[1]
     ynew = np.concatenate((ynew, yc[ilast::]))
     ynew_idx = np.array(np.concatenate((ynew_idx, yidx[ilast::])), dtype=int)
-    ydel_plot.set_title("y critical points\nDeletion Cost={:.2f}".format(ycost))
+    ydel_plot.set_title("{} critical points\nDeletion Cost={:.2f}".format(yname, ycost))
     ydel_plot.set_ylim(lims)
 
     ## Step 3: Show aligned points
     match_plot = plt.subplot(336)
     l1cost = np.sum(np.abs(xnew-ynew))
-    match_plot.plot(xnew)
-    match_plot.plot(ynew)#, linestyle='--')
+    match_plot.plot(xnew, c=xcolor)
+    match_plot.plot(ynew, c=ycolor, linestyle='--')
     if plot_matches:
         for i, (xi, yi) in enumerate(zip(xnew, ynew)):
             plt.plot([i, i], [xi, yi], c='k', linestyle='--')
@@ -279,14 +398,14 @@ def plot_dope_matching(x, y, xc, xs, xc_idx, yc, ys, yc_idx, cost, xdel, ydel, p
 
     ## Step 4: Plot original time series
     plt.subplot2grid((3, 3), (0, 0), colspan=3)
-    plt.plot(x)
-    plt.plot(y, c='C1')
+    plt.plot(x, c=xcolor)
+    plt.plot(y, c=ycolor)
     plt.ylim(lims)
     title = "Original Time Series, Dope Cost: {:.2f}".format(cost)
     if plot_verified:
         title += ", Verified Cost {:.2f}".format(xcost + ycost + l1cost)
     plt.title(title)
-    plt.legend(["x", "y"])
+    plt.legend([xname, yname])
     if plot_matches:
         for (xidx, yidx) in zip(xnew_idx, ynew_idx):
             xidx = xc_idx[xidx]

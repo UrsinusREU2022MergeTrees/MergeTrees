@@ -101,6 +101,7 @@ class MergeNode(object):
         self.y = y
         self.idx = -1 # Inorder index
         self.birth_death = []
+        self.is_globalmin = False
 
     
     def get_coords(self, use_inorder):
@@ -159,7 +160,7 @@ class MergeNode(object):
             else:
                 child.inorder(idx)
 
-    def get_rep_timeseries(self, ys, signs):
+    def get_rep_timeseries(self, xs, ys, signs):
         """
         Create a piecewise linear function that is 
         obtained from an inorder traversal of the y
@@ -167,20 +168,55 @@ class MergeNode(object):
 
         Parameters
         ----------
+        xs: list of float
+            X coordinates of time series that I'm building
         ys: list of float
             Time series that I'm building
         signs: list of [-1, 1]
             A parallel list indicating local min (-1) or local max (+1)
+
         """
         if len(self.children) == 0:
+            xs.append(self.x)
             ys.append(self.y)
             signs.append(-1)
         for i, child in enumerate(sorted(self.children, key=lambda c: c.x)):
-            child.get_rep_timeseries(ys, signs)
+            child.get_rep_timeseries(xs, ys, signs)
             if i < len(self.children)-1:
                 # Put the max in between every adjacent pair of children
+                xs.append(self.x)
                 ys.append(self.y)
                 signs.append(1)
+
+    def persistence_simplify(self, eps):
+        """
+        Remove all leaves that are under a certain persistence threshold
+
+        Parameters
+        ----------
+        eps: Persistence threshold
+        """
+        survived = True
+        if not self.is_globalmin and len(self.birth_death) == 2: # Leaf node
+            if self.birth_death[1] - self.birth_death[0] < eps:
+                survived = False
+        elif len(self.children) > 0:
+            self.children = [c for c in self.children if c.persistence_simplify(eps)]
+            if len(self.children) == 0:
+                survived = False
+        return survived
+    
+    def delete_singletons(self):
+        """
+        Delete nodes with a single child
+        """
+        ret = self
+        if len(self.children) == 1:
+            ret = self.children[0].delete_singletons()
+        else:
+            for i, c in enumerate(self.children):
+                self.children[i] = c.delete_singletons()
+        return ret
 
     def get_eps_saddle_pairs(self, eps, pairs, depth):
         """
@@ -229,7 +265,7 @@ class MergeNode(object):
         X = self.get_coords(use_inorder) + offset
         plt.scatter(X[0], X[1], pointsize, 'k')
         if len(self.birth_death) > 0 and plot_birthdeath:
-            plt.text(X[0], X[1], "{}".format(self.birth_death), c='r')
+            plt.text(X[0], X[1], "{:.2f}, {:.2f}".format(*self.birth_death), c='r')
         for child in self.children:
             Y = child.get_coords(use_inorder) + offset
             if draw_curved:
@@ -326,16 +362,19 @@ class MergeTree(object):
         
         Returns
         -------
-        ndarray(N): Time series representing piecewise linear function,
-        with as many samples as there are nodes in the tree,
-
-        ndarray(N): A parallel array of signs
+        {
+            xs: ndarray(N): Coordinates of time series
+            ys: ndarray(N): Time series representing piecewise linear function,
+                with as many samples as there are nodes in the tree,
+            signs: ndarray(N): A parallel array of signs
+        }
         """
         ys = []
+        xs = []
         signs = []
         if self.root:
-            self.root.get_rep_timeseries(ys, signs)
-        return np.array(ys), np.array(signs)
+            self.root.get_rep_timeseries(xs, ys, signs)
+        return dict(xs=np.array(xs), ys=np.array(ys), signs=np.array(signs))
 
     def collapse_saddles(self, eps):
         """
@@ -358,6 +397,19 @@ class MergeTree(object):
             for (lower, upper, _) in pairs:
                 children = [c for c in upper.children if c != lower]
                 upper.children = sorted(children + lower.children, key=lambda c:c.x)
+
+    def persistence_simplify(self, eps):
+        """
+        Remove all leaves that are under a certain persistence threshold
+
+        Parameters
+        ----------
+        eps: Persistence threshold
+        """
+        if self.root:
+            self.root.persistence_simplify(eps)
+            self.root.delete_singletons()
+
 
     def plot(self, use_inorder, params={}):
         """
@@ -406,7 +458,7 @@ class MergeTree(object):
         if self.root:
             use_grid = False if not 'use_grid' in params else params['use_grid']
             show_merge_xticks = False if not 'show_merge_xticks' in params else params['show_merge_xticks']
-            yvals = np.sort(np.unique(self.get_rep_timeseries()))
+            yvals = np.sort(np.unique(self.get_rep_timeseries()['ys']))
             dy = yvals[-1] - yvals[0]
             plt.subplot(121)
             self.plot(use_inorder, params)
@@ -499,6 +551,7 @@ class MergeTree(object):
                                 representatives[oldest_neighb] = node
                         unionfind_union(pointers, oldest_neighb, n, idxorder)
         #Add the essential class
+        leaves[np.argmin(y)].is_globalmin = True
         if include_essential:
             idx1 = np.argmin(y)
             idx2 = np.argmax(y)
