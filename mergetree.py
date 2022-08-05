@@ -331,6 +331,7 @@ class MergeTree(object):
             If left blank, initialize an empty merge tree.
 
         """
+        self.root = None
         if x.size > 0:
             self.init_from_timeseries(x)
         else:
@@ -409,6 +410,9 @@ class MergeTree(object):
         if self.root:
             self.root.persistence_simplify(eps)
             self.root.delete_singletons()
+            pers = self.PD[:, 1] - self.PD[:, 0]
+            self.PDIdx = self.PDIdx[pers >= eps, :]
+            self.PD = self.PD[pers >= eps, :]
 
 
     def plot(self, use_inorder, params={}):
@@ -497,18 +501,20 @@ class MergeTree(object):
         I: ndarray(N, 2)
             H0 persistence diagram for this merge tree (also store locally
             as a side effect)
+        IIdx: ndarray(N, 2)
+            Indices in the original time series of the birth/death pairs
         """
         #Add points from the bottom up
         N = len(y)
-        idx = np.argsort(y)
+        idxs = np.argsort(y)
         idxorder = np.zeros(N)
-        idxorder[idx] = np.arange(N)
+        idxorder[idxs] = np.arange(N)
         pointers = np.arange(N) #Pointer to oldest indices
         representatives = {} # Nodes that represent a connected component
         leaves = {} # Leaf nodes
         I = [] #Persistence diagram
         IIdx = [] # Paired indices
-        for i in idx: # Go through each point in the time series in height order
+        for i in idxs: # Go through each point in the time series in height order
             neighbs = []
             #Find the oldest representatives of the neighbors that
             #are already alive
@@ -551,9 +557,9 @@ class MergeTree(object):
                                 representatives[oldest_neighb] = node
                         unionfind_union(pointers, oldest_neighb, n, idxorder)
         #Add the essential class
-        leaves[np.argmin(y)].is_globalmin = True
+        leaves[idxs[0]].is_globalmin = True
         if include_essential:
-            idx1 = np.argmin(y)
+            idx1 = idxs[0]
             idx2 = np.argmax(y)
             [b, d] = [y[idx1], y[idx2]]
             I.append([b, d])
