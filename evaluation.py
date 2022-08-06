@@ -78,7 +78,10 @@ def get_dataset(dataset_name, all_eps, circular=False):
                 MT = MergeTree()
                 MT.init_from_timeseries(x[1], circular=circular)
                 MT.persistence_simplify(eps)
-                dataset[skey].append((MT, MT.get_rep_timeseries()['ys']))
+                x = x[1]
+                if eps > 0:
+                    x = MT.get_rep_timeseries()['ys']
+                dataset[skey].append((MT, x))
     return dataset
 
 
@@ -113,7 +116,7 @@ def get_dataset_distances(dataset_name, dataset, methods, prefix="."):
                 print("\nTraining ", method_name, "on", dataset_name, ", eps = ", eps)
                 for i in range(M+N):
                     if i%10 == 0 and i != 0:
-                        print(".", end="")
+                        print(".", end="", flush=True)
                     xi = XAll[i]
                     for j in range(i+1, M+N):
                         yj = XAll[j]
@@ -129,6 +132,7 @@ if __name__ == '__main__':
     methods["dope"] = lambda X, Y: dope_match(X[1], Y[1], circular=circular)[0]
     methods["bottleneck"] = lambda X, Y: gudhi.bottleneck_distance(X[0].PD, Y[0].PD)
     methods["wasserstein"] = lambda X, Y: wasserstein(X[0].PD, Y[0].PD)
+    methods["dtw_full"] = lambda X, Y: cdtw(X[1], Y[1], compute_path=False)[0]
     
 
     parser = argparse.ArgumentParser(description="Evaluating UCR dataset",
