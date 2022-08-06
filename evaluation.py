@@ -105,6 +105,8 @@ def get_dataset_distances(dataset_name, dataset, methods, prefix="."):
     N = len(dataset['data_test'])
     for method_name, method in methods.items():
         for eps in all_eps:
+            if eps > 0 and "dtw" in method_name:
+                continue
             XAll = dataset['data_train_{}'.format(eps)] + dataset['data_test_{}'.format(eps)]
             eps = "{:.1f}".format(eps)
             tic = time.time()
@@ -122,6 +124,9 @@ def get_dataset_distances(dataset_name, dataset, methods, prefix="."):
                         yj = XAll[j]
                         D[i, j] = method(xi, yj)
                 D = D + D.T
+                pix = np.arange(M+N)
+                I, J = np.meshgrid(pix, pix, indexing='ij')
+                D = D[I > J]
                 sio.savemat(filename, {"D":D})
                 print("Elapsed Time: {:.3f}".format(time.time()-tic))
 
