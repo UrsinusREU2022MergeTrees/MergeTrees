@@ -1,30 +1,7 @@
-import time
 import numpy as np
-import argparse
-from mergetree import *
-from matching import *
-from matching_plots import *
-from dtw import *
-from utils import *
-from evaluation import *
-import pyts
-import pyts.datasets
-import time
-import gudhi # For bottleneck
-import scipy.io as sio
-import os
-from sys import argv
+from numba import jit
 
-def euclidean_compare(x, y):
-    N = max(len(x), len(y))
-    # Zeropadding, as suggested by Eammon
-    if len(x) < N:
-        x = np.concatenate((x, np.zeros(N-len(x))))
-    if len(y) < N:
-        y = np.concatenate((y, np.zeros(N-len(y))))
-    return np.sum((x-y)**2)
-
-def get1nn_error_rate(D, idx_train, idx_test):
+def get_1nn_error_rate(D, idx_train, idx_test):
     """
     Compute the error rate of a 1 nearest neighbor classifier
     on a particular dataset
@@ -32,7 +9,7 @@ def get1nn_error_rate(D, idx_train, idx_test):
     Parameters
     ----------
     D: ndarray(M, N)
-        Distances to examine
+        Distances to examine.  Training along rows and testing along columns
     idx_train: ndarray(M)
         Class indices of the training set
     idx_test: ndarray(N)
@@ -44,109 +21,152 @@ def get1nn_error_rate(D, idx_train, idx_test):
     N = D.shape[1]
     return (N-correct)/N
 
-def get_dataset(dataset_name, all_eps, circular=False):
+def get_mean_rank(D, idx_train, idx_test):
     """
-    Load in a UCR dataset and create all merge trees and simplifications
+    Compute the mean rank of the first correctly identified item in the training
+    set for every test item
 
     Parameters
     ----------
-    dataset_name: string
-        Name of UCR dataset
-    all_eps: ndarray(K)
-        List of all epsilon simplifications to make
-    circular: boolean
-        Whether to use circular boundary conditions for sublevelset filtrations
-    
-    Returns
-    -------
-    dataset: dict
-        UCR dataset
+    D: ndarray(M, N)
+        Distances to examine.  Training along rows and testing along columns
+    idx_train: ndarray(M)
+        Class indices of the training set
+    idx_test: ndarray(N)
+        Class indices of the test set
     """
-    dataset = pyts.datasets.fetch_ucr_dataset(dataset_name)
-    for s in ["train", "test"]:
-        idx = np.argsort(dataset['target_'+s])
-        #dataset['data_'+s] = [znormalize(x) for x in dataset['data_'+s][idx]]
-        dataset['data_'+s] = [x[~np.isnan(x)] for x in dataset['data_'+s][idx]]
-        for i, x in enumerate(dataset['data_'+s]):
-            MT = MergeTree()
-            MT.init_from_timeseries(x, circular=circular)
-            dataset['data_'+s][i] = (MT, x)
-        for eps in all_eps:
-            skey = 'data_{}_{:.1f}'.format(s, eps)
-            dataset[skey] = []
-            for x in dataset['data_'+s]:
-                MT = MergeTree()
-                MT.init_from_timeseries(x[1], circular=circular)
-                MT.persistence_simplify(eps)
-                x = x[1]
-                if eps > 0:
-                    x = MT.get_rep_timeseries()['ys']
-                dataset[skey].append((MT, x))
-    return dataset
+    idx = np.argsort(D, axis=0)
+    results = idx_train[idx] == idx_test[None, :]
+    results = np.array(results, dtype=float)
+    results[results == 0] = np.nan
+    results = results*(np.arange(results.shape[0])[:, None])
+    return np.mean(np.nanmin(1+results, axis=0))
 
-
-def get_dataset_distances(dataset_name, dataset, methods, prefix="."):
+def get_mean_reciprocal_rank(D, idx_train, idx_test):
     """
-    Compute all pairwise distances between the union of training and test data
-    for a particular dataset
+    Compute the mean reciprocal rank of the first correctly identified item
+    in the training set for every test item
 
     Parameters
     ----------
-    dataset_name: string
-        Name of the dataset
-    dataset: dictionary
-        Information with the dataset
-    methods: dictionary {string: function handle}
-        Methods to compute distances
-    prefix: string
-        Path to results file
+    D: ndarray(M, N)
+        Distances to examine.  Training along rows and testing along columns
+    idx_train: ndarray(M)
+        Class indices of the training set
+    idx_test: ndarray(N)
+        Class indices of the test set
     """
-    M = len(dataset['data_train'])
-    N = len(dataset['data_test'])
-    for method_name, method in methods.items():
-        for eps in all_eps:
-            if eps > 0 and "dtw" in method_name:
-                continue
-            XAll = dataset['data_train_{}'.format(eps)] + dataset['data_test_{}'.format(eps)]
-            eps = "{:.1f}".format(eps)
-            tic = time.time()
-            D = np.zeros((M+N, M+N))
-            filename = "{}/{}_{}_{}.mat".format(prefix, dataset_name, method_name, eps)
-            if os.path.exists(filename):
-                print("Skipping", filename)
+    idx = np.argsort(D, axis=0)
+    results = idx_train[idx] == idx_test[None, :]
+    results = np.array(results, dtype=float)
+    results[results == 0] = np.nan
+    results = results*(np.arange(results.shape[0])[:, None])
+    return np.mean(1/np.nanmin(1+results, axis=0))
+
+
+
+@jit(nopython=True)
+def get_map_helper(idx, idx_train, idx_test):
+    """
+    Compute the mean average precision of every test item with respect to the
+    training data
+
+    Parameters
+    ----------
+    idx: ndarray(M, N)
+        Result of running np.argsort(D, axis=0)
+    idx_train: ndarray(M)
+        Class indices of the training set. 
+    idx_test: ndarray(N)
+        Class indices of the test set. 
+    """
+    map = 0
+    for j in range(idx.shape[1]):
+        recall = 0
+        ap = 0
+        for i in range(idx.shape[0]):
+            if idx_train[idx[i, j]] == idx_test[j]:
+                ap += (recall+1) / (i+1)
+                recall += 1
+        map += ap/recall
+    return map/idx.shape[1]
+
+
+def get_map(D, idx_train, idx_test):
+    """
+    Compute the mean average precision of every test item with respect to the
+    training data
+
+    Parameters
+    ----------
+    D: ndarray(M, N)
+        Distances to examine.  Training along rows and testing along columns
+    idx_train: ndarray(M)
+        Class indices of the training set. 
+    idx_test: ndarray(N)
+        Class indices of the test set. 
+    """
+    idx = np.argsort(D, axis=0)
+    return get_map_helper(idx, idx_train, idx_test)
+
+def evaluate_ucr():
+    """
+    Run all evaluation statistics across all methods across all datasets in the UCR dataset
+    """
+    import glob
+    from ucr import get_dataset, unpack_D
+    import scipy.io as sio
+    # Report mean rank of training data for every test item
+    datasets = [f.split("_dtw")[0].split("/")[-1] for f in glob.glob("results/*dtw*")]
+    statistics = [("MR", get_mean_rank), ("MRR", get_mean_reciprocal_rank), ("MAP", get_map), ("1NN", get_1nn_error_rate)]
+    methods = ['dope', 'bottleneck', 'wasserstein', 'dtw_full']
+
+    for (stat_name, fn_stat) in statistics:
+        fout = open("{}.csv".format(stat_name), "w")
+        fout.write("Dataset,")
+        for i, method in enumerate(methods):
+            fout.write("{},{} (Best Param)".format(method, method))
+            if i < len(methods)-1:
+                fout.write(",")
             else:
-                print("\nTraining ", method_name, "on", dataset_name, ", eps = ", eps)
-                for i in range(M+N):
-                    if i%10 == 0 and i != 0:
-                        print(".", end="", flush=True)
-                    xi = XAll[i]
-                    for j in range(i+1, M+N):
-                        yj = XAll[j]
-                        D[i, j] = method(xi, yj)
-                D = D + D.T
-                pix = np.arange(M+N)
-                I, J = np.meshgrid(pix, pix, indexing='ij')
-                D = D[I > J]
-                sio.savemat(filename, {"D":D})
-                print("Elapsed Time: {:.3f}".format(time.time()-tic))
+                fout.write("\n")
+        for dataset_str in datasets:
+            print(stat_name, dataset_str)
+            fout.write("{},".format(dataset_str))
+            dataset = get_dataset(dataset_str, [])
+            M = len(dataset['target_train'])
+            idx_train = dataset['target_train']
+            idx_test = dataset['target_test']
+            for i, method in enumerate(methods):
+                ## Step 1: Do the default parameter for this method
+                dataset_method = {**dataset, **sio.loadmat("results/{}_{}_0.0.mat".format(dataset_str, method))}
+                D = unpack_D(dataset_method['D'])
+                res = fn_stat(D[0:M, M::], idx_train, idx_test)
+                fout.write("{},".format(res))
+
+                ## Step 2: Find the best parameter in the training data
+                best_train_dataset = "results/{}_{}_0.0.mat".format(dataset_str, method)
+                best_train_value = res
+                for train_dataset in glob.glob("results/{}_{}_*.mat".format(dataset_str, method)):
+                    dataset_method = {**dataset, **sio.loadmat("results/{}_{}_0.0.mat".format(dataset_str, method))}
+                    D = unpack_D(dataset_method['D'])
+                    res = fn_stat(D[0:M, 0:M], idx_train, idx_train)
+                    if res < best_train_value:
+                        best_train_value = res
+                        best_train_dataset = train_dataset
+                
+                ## Step 3: Apply this parameter to the test data
+                param = best_train_dataset.split("_")[-1][0:-4]
+                dataset_method = {**dataset, **sio.loadmat(best_train_dataset)}
+                D = unpack_D(dataset_method['D'])
+                res = fn_stat(D[0:M, M::], idx_train, idx_test)
+                fout.write("{} ({})".format(res, param))
+                if i < len(methods)-1:
+                    fout.write(",")
+                else:
+                    fout.write("\n")
+            fout.flush()
+        fout.close()
 
 if __name__ == '__main__':
-    circular=False
-    all_eps = np.arange(0, 11)/10
-    methods = {}
-    methods["dope"] = lambda X, Y: dope_match(X[1], Y[1], circular=circular)[0]
-    methods["bottleneck"] = lambda X, Y: gudhi.bottleneck_distance(X[0].PD, Y[0].PD)
-    methods["wasserstein"] = lambda X, Y: wasserstein(X[0].PD, Y[0].PD)
-    methods["dtw_full"] = lambda X, Y: cdtw(X[1], Y[1], compute_path=False)[0]
-    
-
-    parser = argparse.ArgumentParser(description="Evaluating UCR dataset",
-                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("-p", "--path", type=str, action="store", default="./results", help="Path to results")
-    parser.add_argument("-i", '--index', type=int, action="store", help="UCR dataset index")
-    cmd_args = parser.parse_args()
-
-    dataset_name = pyts.datasets.ucr_dataset_list()[cmd_args.index]
-    dataset = get_dataset(dataset_name, all_eps, circular=False)
-    print("Doing", dataset_name)
-    get_dataset_distances(dataset_name, dataset, methods, cmd_args.path)
+    evaluate_ucr()
