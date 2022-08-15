@@ -85,7 +85,7 @@ def get_dataset_distances(dataset_name, dataset, methods, prefix="."):
     N = len(dataset['data_test'])
     for method_name, method in methods.items():
         for eps in all_eps:
-            if eps > 0 and "dtw" in method_name:
+            if eps > 0 and ("dtw" in method_name or "euclidean" in method_name):
                 continue
             XAll = dataset['data_train_{}'.format(eps)] + dataset['data_test_{}'.format(eps)]
             eps = "{:.1f}".format(eps)
@@ -129,10 +129,10 @@ if __name__ == '__main__':
     circular=False
     all_eps = np.arange(0, 11)/10
     methods = {}
-    methods["dope"] = lambda X, Y: dope_match(X[1], Y[1], circular=circular)[0]
-    methods["bottleneck"] = lambda X, Y: gudhi.bottleneck_distance(X[0].PD, Y[0].PD)
-    methods["wasserstein"] = lambda X, Y: wasserstein(X[0].PD, Y[0].PD)
-    methods["dtw_full"] = lambda X, Y: cdtw(X[1], Y[1], compute_path=False)[0]
+    #methods["dope"] = lambda X, Y: dope_match(X[1], Y[1], circular=circular)[0]
+    #methods["bottleneck"] = lambda X, Y: gudhi.bottleneck_distance(X[0].PD, Y[0].PD)
+    #methods["wasserstein"] = lambda X, Y: wasserstein(X[0].PD, Y[0].PD)
+    #methods["dtw_full"] = lambda X, Y: cdtw(X[1], Y[1], compute_path=False)[0]
     methods["euclidean"] = lambda X, Y: euclidean_compare(X[1], Y[1])
     
 
