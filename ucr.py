@@ -129,10 +129,10 @@ if __name__ == '__main__':
     circular=False
     all_eps = np.arange(0, 11)/10
     methods = {}
-    #methods["dope"] = lambda X, Y: dope_match(X[1], Y[1], circular=circular)[0]
-    #methods["bottleneck"] = lambda X, Y: gudhi.bottleneck_distance(X[0].PD, Y[0].PD)
-    #methods["wasserstein"] = lambda X, Y: wasserstein(X[0].PD, Y[0].PD)
-    #methods["dtw_full"] = lambda X, Y: cdtw(X[1], Y[1], compute_path=False)[0]
+    methods["dope"] = lambda X, Y: dope_match(X[1], Y[1], circular=circular)[0]
+    methods["bottleneck"] = lambda X, Y: gudhi.bottleneck_distance(X[0].PD, Y[0].PD)
+    methods["wasserstein"] = lambda X, Y: wasserstein(X[0].PD, Y[0].PD)
+    methods["dtw_full"] = lambda X, Y: cdtw(X[1], Y[1], compute_path=False)[0]
     methods["euclidean"] = lambda X, Y: euclidean_compare(X[1], Y[1])
     
 
