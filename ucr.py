@@ -110,6 +110,21 @@ def get_dataset_distances(dataset_name, dataset, methods, prefix="."):
                 sio.savemat(filename, {"D":D})
                 print("Elapsed Time: {:.3f}".format(time.time()-tic))
 
+def get_firstlast_dist(dataset):
+    """
+    Return a distance matrix which is the sum of the absolute differences
+    between the first and last points in a dataset
+    """
+    X = []
+    for x in dataset['data_train'] + dataset['data_test']:
+        x = x[1]
+        X.append([x[0], x[-1]])
+    X = np.array(X)
+    left = X[:, 0]
+    right = X[:, 1]
+    D = np.abs(left[:, None] - left[None, :]) + np.abs(right[:, None] - right[None, :])
+    return D
+
 def unpack_D(d):
     """
     Unpack the lower triangular compressed distance matrix from the

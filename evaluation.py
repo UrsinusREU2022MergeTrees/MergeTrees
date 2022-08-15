@@ -179,6 +179,48 @@ def evaluate_ucr():
             fout.flush()
         fout.close()
 
+
+def evaluate_ucr_map_all():
+    """
+    Run all evaluation statistics across all methods across all datasets in the UCR dataset
+    """
+    import glob
+    from ucr import get_dataset, unpack_D, get_firstlast_dist
+    import scipy.io as sio
+    # Report mean rank of training data for every test item
+    datasets = [f.split("_dtw")[0].split("/")[-1] for f in glob.glob("results/*dtw*")]
+    methods = ['dope', 'bottleneck', 'wasserstein', 'euclidean', 'dtw_full']
+    fout = open("MAP_ALL.csv", "w")
+    fout.write("Dataset,")
+    for i, method in enumerate(methods):
+        fout.write(method)
+        if i < len(methods)-1:
+            fout.write(",")
+        else:
+            fout.write("\n")
+    for dataset_str in datasets:
+        print(dataset_str)
+        fout.write("{},".format(dataset_str))
+        dataset = get_dataset(dataset_str, [])
+        D_firstlast = get_firstlast_dist(dataset)
+        idx_train = dataset['target_train']
+        idx_test = dataset['target_test']
+        idx_all = np.concatenate((idx_train, idx_test))
+        for i, method in enumerate(methods):
+            ## Step 1: Do the default parameter for this method
+            dataset_method = {**dataset, **sio.loadmat("results/{}_{}_0.0.mat".format(dataset_str, method))}
+            D = unpack_D(dataset_method['D'])
+            if (not "dtw" in method) and (not "euclidean" in method):
+                D += D_firstlast
+            res = get_map(D, idx_all, idx_all)
+            fout.write("{}".format(res))
+            if i < len(methods)-1:
+                fout.write(",")
+            else:
+                fout.write("\n")
+        fout.flush()
+    fout.close()
+
 def make_critical_distance_plot(data_path, alpha):
     """
     Make a critical distance plot for a set of classifiers using
