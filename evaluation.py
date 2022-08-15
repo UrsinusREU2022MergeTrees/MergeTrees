@@ -130,7 +130,7 @@ def evaluate_ucr():
                     ("MRR_ALL", lambda D, idx_train, idx_test: get_mean_reciprocal_rank(D, idx_train, idx_test, do_min=False)), 
                     ("MAP", get_map), ("1NN", get_1nn_error_rate)
                 ]
-    methods = ['dope', 'bottleneck', 'wasserstein', 'dtw_full']
+    methods = ['dope', 'bottleneck', 'wasserstein', 'euclidean', 'dtw_full']
 
     for (stat_name, fn_stat) in statistics:
         fout = open("{}.csv".format(stat_name), "w")
@@ -178,6 +178,72 @@ def evaluate_ucr():
                     fout.write("\n")
             fout.flush()
         fout.close()
+
+def make_critical_distance_plot(data_path, alpha):
+    """
+    Make a critical distance plot for a set of classifiers using
+    pairwise Wilcoxon signed tests with a Holm-Bonferroni correction
+
+    Parameters
+    ----------
+    data_path: string
+        Path to csv file containing results
+    alpha: float
+        Cutoff p-value to use
+    """
+    import pandas as pd
+    from scipy.stats import wilcoxon
+    import matplotlib.pyplot as plt
+
+    data = pd.read_csv(data_path)
+    methods = ['dope', 'wasserstein', 'bottleneck', 'euclidean', 'dtw_full']
+    colors = {m:"C%i"%i for i, m in enumerate(methods)}
+    N = len(methods)
+    methods_data = [data[m].to_numpy() for m in methods]
+    avgs = np.array([np.mean(data[m].to_numpy()) for m in methods])
+    methods = [methods[i] for i in np.argsort(avgs)]
+    methods_data = [methods_data[i] for i in np.argsort(avgs)]
+    avgs = np.sort(avgs)
+
+    ## Step 1: Plot each classifier
+    plt.scatter(avgs, 0*avgs, c='k')
+    xticks = plt.gca().get_xticks()
+    dx = xticks[-1]-xticks[0]
+    plt.plot([xticks[0], xticks[-1]], [0, 0], c='k')
+    dy = 0.05*dx
+    for i, avg in enumerate(avgs):
+        h = i # Height towards bottom
+        if i > N // 2:
+            h = N-i
+        h += 1
+        y = -h*dy
+        x = xticks[0]-0.3*dx
+        if i > N // 2:
+            x = xticks[-1]+0.2*dx
+        color = colors[methods[i]]
+        plt.plot([avg, avg], [0, y], color)
+        plt.plot([x, avg], [y, y], color)
+        plt.scatter([avg], [0], c=color, zorder=100)
+        if i > N // 2:
+            x = avgs[-1] + 0.1*(xticks[1]-xticks[0])
+        plt.text(x, y+0.2*dy, "{} ({:.4f})".format(methods[i], avg), c=color)
+    
+    for tick in xticks:
+        plt.plot([tick, tick], [-dy/8, dy/8], c='k')
+        plt.text(tick-0.2*(xticks[1]-xticks[0]), dy/5, "{:.2f}".format(tick))
+    
+    ## Step 2: Plot merges for things that are statistically similar
+    ps = []
+    for i in range(N):
+        for j in range(i+1, N):
+            p = wilcoxon(methods_data[i], methods_data[j], zero_method="zsplit")[-1]
+            ps.append([methods[i], methods[j], p])
+    ps = sorted(ps, key=lambda x: x[-1])
+    for i, x in enumerate(ps):
+        fac = alpha/(len(ps)-i) # Holm-Bonferroni correction
+        print(x, x[-1] < fac)
+    
+    plt.axis('off')
 
 if __name__ == '__main__':
     evaluate_ucr()
