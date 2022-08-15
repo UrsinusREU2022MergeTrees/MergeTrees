@@ -42,10 +42,9 @@ def get_mean_rank(D, idx_train, idx_test):
     results = results*(np.arange(results.shape[0])[:, None])
     return np.mean(np.nanmin(1+results, axis=0))
 
-def get_mean_reciprocal_rank(D, idx_train, idx_test):
+def get_mean_reciprocal_rank(D, idx_train, idx_test, do_min=True):
     """
-    Compute the mean reciprocal rank of the first correctly identified item
-    in the training set for every test item
+    Compute the mean reciprocal rank in the training set for every test item
 
     Parameters
     ----------
@@ -55,13 +54,21 @@ def get_mean_reciprocal_rank(D, idx_train, idx_test):
         Class indices of the training set
     idx_test: ndarray(N)
         Class indices of the test set
+    do_min: boolean
+        If true, report the MRR for the top ranked item.  If False, report
+        MRR for all items
     """
     idx = np.argsort(D, axis=0)
     results = idx_train[idx] == idx_test[None, :]
     results = np.array(results, dtype=float)
     results[results == 0] = np.nan
     results = results*(np.arange(results.shape[0])[:, None])
-    return np.mean(1/np.nanmin(1+results, axis=0))
+    ret = 0
+    if do_min:
+        ret = np.mean(1/np.nanmin(1+results, axis=0))
+    else:
+        ret = np.mean(np.nanmean(1/(1+results), axis=0))
+    return ret
 
 
 
@@ -118,7 +125,11 @@ def evaluate_ucr():
     import scipy.io as sio
     # Report mean rank of training data for every test item
     datasets = [f.split("_dtw")[0].split("/")[-1] for f in glob.glob("results/*dtw*")]
-    statistics = [("MR", get_mean_rank), ("MRR", get_mean_reciprocal_rank), ("MAP", get_map), ("1NN", get_1nn_error_rate)]
+    statistics = [  ("MR", get_mean_rank), 
+                    ("MRR", get_mean_reciprocal_rank), 
+                    ("MRR_ALL", lambda D, idx_train, idx_test: get_mean_reciprocal_rank(D, idx_train, idx_test, do_min=False)), 
+                    ("MAP", get_map), ("1NN", get_1nn_error_rate)
+                ]
     methods = ['dope', 'bottleneck', 'wasserstein', 'dtw_full']
 
     for (stat_name, fn_stat) in statistics:

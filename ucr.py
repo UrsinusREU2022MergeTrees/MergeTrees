@@ -133,6 +133,7 @@ if __name__ == '__main__':
     methods["bottleneck"] = lambda X, Y: gudhi.bottleneck_distance(X[0].PD, Y[0].PD)
     methods["wasserstein"] = lambda X, Y: wasserstein(X[0].PD, Y[0].PD)
     methods["dtw_full"] = lambda X, Y: cdtw(X[1], Y[1], compute_path=False)[0]
+    methods["euclidean"] = lambda X, Y: euclidean_compare(X[1], Y[1])
     
 
     parser = argparse.ArgumentParser(description="Evaluating UCR dataset",
