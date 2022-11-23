@@ -321,7 +321,7 @@ def poly_fit(X, xs, do_plot = False):
         plt.show()
     return Y
 
-def draw_curve(X, Y, linewidth):
+def draw_curve(X, Y, linewidth, color='k'):
     """
     Draw a parabolic curve between two 2D points
     Parameters
@@ -332,6 +332,8 @@ def draw_curve(X, Y, linewidth):
         Second point
     linewidth: int
         Thickness of line
+    color: string
+        Color to draw
     """
     if Y[1] < X[1]:
         X, Y = Y, X
@@ -341,7 +343,7 @@ def draw_curve(X, Y, linewidth):
     xs = np.linspace(x1, x3, 50)
     X = np.array([[x1, y1], [x2, y2], [x3, y3]])
     Y = poly_fit(X, xs, do_plot=False)
-    plt.plot(Y[:, 0], Y[:, 1], 'k', linewidth=linewidth)
+    plt.plot(Y[:, 0], Y[:, 1], color, linewidth=linewidth)
 
 if __name__ == '__main__':
     [x1, y1, x3, y3] = [100, 100, 101, 104]

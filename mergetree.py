@@ -160,6 +160,22 @@ class MergeNode(object):
             else:
                 child.inorder(idx)
 
+    def gather_inorder(self, nodes):
+        """
+        Perform a generalized inorder traversal
+        NOTE: This will sort child nodes arbitrarily if 
+        their x coordinates have not been specified
+
+        Parameters
+        nodes: list of MergeNode
+            List of the nodes in the merge tree, sorted inorder
+        """
+        for child in sorted(self.children+[self], key=lambda c: c.x):
+            if self == child:
+                nodes.append(self)
+            else:
+                child.gather_inorder(nodes)
+
     def get_rep_timeseries(self, xs, ys, signs):
         """
         Create a piecewise linear function that is 
@@ -254,6 +270,7 @@ class MergeNode(object):
             linewidth: int: How thick to draw the edges
             pointsize: int: How big to draw the nodes
             plot_birthdeath: boolean: Whether to plot (birth, death) at leaf nodes
+            color: string: What color to draw the nodes and branches
         }
         """
         offset = np.array([0, 0]) if not 'offset' in params else params['offset']
@@ -261,17 +278,18 @@ class MergeNode(object):
         linewidth = 3 if not 'linewidth' in params else params['linewidth']
         pointsize = 200 if not 'pointsize' in params else params['pointsize']
         plot_birthdeath = False if not 'plot_birthdeath' in params else params['plot_birthdeath']
+        color = 'k' if not 'color' in params else params['color']
         X = np.array([self.x, self.y])
         X = self.get_coords(use_inorder) + offset
-        plt.scatter(X[0], X[1], pointsize, 'k')
+        plt.scatter(X[0], X[1], pointsize, color)
         if len(self.birth_death) > 0 and plot_birthdeath:
             plt.text(X[0], X[1], "{:.2f}, {:.2f}".format(*self.birth_death), c='r')
         for child in self.children:
             Y = child.get_coords(use_inorder) + offset
             if draw_curved:
-                draw_curve(X, Y, linewidth)
+                draw_curve(X, Y, linewidth, color)
             else:
-                plt.plot([X[0], Y[0]], [X[1], Y[1]], 'k', lineWidth=linewidth)
+                plt.plot([X[0], Y[0]], [X[1], Y[1]], color, lineWidth=linewidth)
             child.plot(use_inorder, params)
 
 
@@ -332,12 +350,26 @@ class MergeTree(object):
 
         """
         self.root = None
-        if x.size > 0:
+        if len(x) > 0:
             self.init_from_timeseries(x)
         else:
             self.root = None
             self.PD = np.array([[]])
             self.PDIdx = np.array([[]], dtype=int)
+
+    def gather_inorder(self):
+        """
+        Gather all of the nodes, sorted inorder
+
+        Returns
+        -------
+        nodes: list of MergeNode
+            List of the nodes in the merge tree, sorted inorder
+        """
+        nodes = []
+        if self.root:
+            self.root.gather_inorder(nodes)
+        return nodes
 
     def get_weight_sequence(self):
         """
@@ -568,3 +600,17 @@ class MergeTree(object):
         self.PD = np.array(I)
         self.PDIdx = np.array(IIdx, dtype=int)
         return self.PD, self.PDIdx
+    
+    def convert_to_bdi(self):
+        """
+        Convert to the format required by BDI-ED
+        """
+        nodes = self.gather_inorder()
+        for i, n in enumerate(nodes):
+            n.idx = i
+        nodeScalars = [n.y for n in nodes]
+        children = [[c.idx for c in n.children] for n in nodes]
+        rootID = -1
+        if self.root:
+            rootID = self.root.idx
+        return nodeScalars, children, rootID
