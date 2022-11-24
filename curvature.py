@@ -14,6 +14,33 @@ import matplotlib.animation as animation
 from skimage import measure
 import skimage.io
 
+def get_curv_2d(X, sigma, loop=False, m='nearest'):
+    """
+    Compute smoothed 2D curvature with a closed form formula
+
+    Parameters
+    ----------
+    X: ndarray(N, d)
+        An N x d matrix of points in R^d
+    sigma: float
+        The smoothing amount
+    loop: boolean
+        Whether to treat this trajectory as a topological loop (i.e. add an edge between first and last point)
+    
+    Returns
+    -------
+    ndarray(N)
+        Signed curvature
+    """
+    if loop:
+        m = 'wrap'
+    X1 = gf1d(X, sigma, axis=0, order = 1, mode = m)
+    X2 = gf1d(X, sigma, axis=0, order = 2, mode = m)
+    x1, y1 = X1[:, 0], X1[:, 1]
+    x2, y2 = X2[:, 0], X2[:, 1]
+    return (x1*y2 - y1*x2)/(x1**2 + y1**2)**1.5
+
+
 def get_curv_vectors(X, MaxOrder, sigma, loop = False, m = 'nearest'):
     """
     Get smoothed curvature vectors up to a particular order
