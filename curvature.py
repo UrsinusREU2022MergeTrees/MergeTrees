@@ -332,9 +332,9 @@ if __name__ == '__main__':
     import glob
     import os
     plt.figure(figsize=(8, 8))
-    for f in glob.glob("mpeg7/*.gif"):
+    for f in glob.glob("mpeg7/*.png"):
         print(f)
-        fout = f[0:-3] + "png"
+        fout = f[0:-4] + "_plot.png"
         if os.path.exists(fout):
             continue
         X = get_contour_curve(f, normalize=True, pad=True)
