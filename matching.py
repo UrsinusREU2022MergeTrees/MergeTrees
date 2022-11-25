@@ -4,6 +4,165 @@ from numba import jit
 from numba.types import int_, float32
 from mergetree import *
 
+@jit(nopython=True)
+def merge_chunks(path):
+    """
+    Coalesce the deleted chunks in a path
+
+    Parameters
+    ----------
+    path: list of [i, j]
+        Backtrace edit path
+
+    Returns
+    -------
+    xdel: list of [i1, i2), each of which is a range to delete from x
+    ydel: list of [j1, j2), each of which is a range to delete from y
+    """
+    xdel = []
+    ydel = []
+    for i in range(len(path)-1):
+        p1 = np.array(path[i])
+        p2 = np.array(path[i+1])
+        diff = p2 - p1
+        if diff[0] > 1:
+            xnext = [p1[0], p2[0]]
+            if len(xdel) > 0 and xdel[-1][1] == xnext[0]:
+                # Merge with last chunk
+                xdel[-1][1] = xnext[1]
+            else:
+                xdel.append(xnext)
+        if diff[1] > 1:
+            ynext = [p1[1], p2[1]]
+            if len(ydel) > 0 and ydel[-1][1] == ynext[0]:
+                # Merge with last chunk
+                ydel[-1][1] = ynext[1]
+            else:
+                ydel.append(ynext)
+    if len(xdel) == 0:
+        xdel = np.zeros((0,0), int_)
+    else:
+        xdel = np.array(xdel, int_)
+    if len(ydel) == 0:
+        ydel = np.zeros((0,0), int_)
+    else:
+        ydel = np.array(ydel, int_)
+    return xdel, ydel
+
+@jit("Tuple((f4,i8,i8[:,:],i8[:,:]))(f8[:],f8[:])", nopython=True)
+def circular_dope_match(x, y):
+    """
+    Compute Dynamic Ordered Persistence Editing (DOPE) between two time series
+
+    Parameters
+    ----------
+    x: ndarray(M)
+        First time series
+    y: ndarray(N)
+        Second time series
+    
+    Returns
+    -------
+    float: optimal distance,
+    list of [int, int]: Ranges to delete in x critical time series
+    list of [int, int]: Ranges to delete in y critical time series
+    """
+    ## Step 1: Setup critical point time series and costs
+    xc, xs, xidx = get_crit_timeseries(x, circular=True)
+    yc, ys, yidx = get_crit_timeseries(y, circular=True)
+    M = xc.size
+    N = yc.size
+    if M == 0 or N == 0:
+        # Corner case
+        return float32(np.sum(xc*xs) + np.sum(yc*ys)), int_(0), np.zeros((0,0), int_), np.zeros((0,0), int_)
+
+    # Use cumulative sums for quick deletion cost lookup
+    xcosts = np.zeros(xc.size+1, float32)
+    xcosts[1::] = np.cumsum(xc*xs)
+
+    y_shift = 0
+    if xs[0] != ys[0]:
+        yc = np.roll(yc, 1)
+        ys = np.roll(ys, 1)
+        yidx = np.roll(yidx, 1)
+        y_shift = 1
+    
+    min_cost = np.inf
+    min_shift = y_shift
+    min_xdel = np.zeros((0,0), int_)
+    min_ydel = np.zeros((0,0), int_)
+    for _ in range(0, N, 2):
+        ycosts = np.zeros(yc.size+1, float32)
+        ycosts[1::] = np.cumsum(yc*ys)
+        
+        ## Step 2: Setup data structures
+        # Dynamic programming matrix
+        D = np.inf*np.ones((M+1, N+1), float32)
+        D[0, 0] = 0
+        # Backtracing matrix; each entry is sizes of chunks deleted from each time series
+        back = [[[0, 0] for j in range(N+1)] for i in range(M+1)]
+        # Boundary conditions
+        D[0, 2::2] = ycosts[2::2]
+        D[2::2, 0] = xcosts[2::2]
+        for j in range(2, N+1, 2):
+            back[0][j] = [0, j]
+        for i in range(2, M+1, 2):
+            back[i][0] = [i, 0]
+        
+        ## Step 3: Do dynamic programming
+        for i in range(1, M+1):
+            for j in range(1, N+1):
+                # First try matching the last point in the L1 sum
+                # This should only be done if the last points are both mins or both maxes
+                if xs[i-1] == ys[j-1]:
+                    D[i, j] = np.abs(x[i-1]-y[j-1]) + D[i-1, j-1]
+                # Now try all other deletion possibilities
+                for k, l in [[0, 2], [2, 0], [2, 2]]:
+                    if i >= k and j >= l:
+                        # Delete chunks from each time series and use
+                        # the previously computed subproblem
+                        xdel = 0
+                        if k > 0:
+                            xdel = xcosts[i]-xcosts[i-k]
+                        ydel = 0
+                        if l > 0:
+                            ydel = ycosts[j]-ycosts[j-l]
+                        res = D[i-k, j-l] + xdel + ydel
+                        if res < D[i, j]:
+                            D[i, j] = res
+                            back[i][j] = [k, l]
+        ## Step 4: Do backtracing 
+        if D[-1, -1] < min_cost:
+            min_cost = D[-1, -1]
+            min_shift = y_shift
+            path = []
+            while i > 0 or j > 0:
+                path.append([i, j])
+                [di, dj] = back[i][j]
+                if di == 0 and dj == 0:
+                    i -= 1
+                    j -= 1
+                else:
+                    i -= di
+                    j -= dj
+            path.append([0, 0])
+            path.reverse()
+
+            ## Step 5: Extract and merge deleted chunk indices
+            xdel, ydel = merge_chunks(path)
+            
+            ## Step 6: Convert back to time series indices
+
+            min_xdel = xdel
+            min_ydel = ydel
+        # Shift for the next alignment attempt
+        yc = np.roll(yc, 2)
+        ys = np.roll(ys, 2)
+        yidx = np.roll(yidx, 2)
+        y_shift += 2
+    return min_cost, min_shift, min_xdel, min_ydel
+
+
 @jit("Tuple((f4,i8[:,:],i8[:,:]))(f8[:],f8[:],b1)", nopython=True)
 def dope_match(x, y, circular=False):
     """
@@ -89,34 +248,7 @@ def dope_match(x, y, circular=False):
     path.reverse()
 
     ## Step 5: Extract and merge deleted chunk indices
-    xdel = []
-    ydel = []
-    for i in range(len(path)-1):
-        p1 = np.array(path[i])
-        p2 = np.array(path[i+1])
-        diff = p2 - p1
-        if diff[0] > 1:
-            xnext = [p1[0], p2[0]]
-            if len(xdel) > 0 and xdel[-1][1] == xnext[0]:
-                # Merge with last chunk
-                xdel[-1][1] = xnext[1]
-            else:
-                xdel.append(xnext)
-        if diff[1] > 1:
-            ynext = [p1[1], p2[1]]
-            if len(ydel) > 0 and ydel[-1][1] == ynext[0]:
-                # Merge with last chunk
-                ydel[-1][1] = ynext[1]
-            else:
-                ydel.append(ynext)
-    if len(xdel) == 0:
-        xdel = np.zeros((0,0), int_)
-    else:
-        xdel = np.array(xdel, int_)
-    if len(ydel) == 0:
-        ydel = np.zeros((0,0), int_)
-    else:
-        ydel = np.array(ydel, int_)
+    xdel, ydel = merge_chunks(path)
     return D[-1, -1], xdel, ydel
 
 
