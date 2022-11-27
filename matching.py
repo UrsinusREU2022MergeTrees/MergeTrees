@@ -22,8 +22,8 @@ def merge_chunks(path):
     xdel = []
     ydel = []
     for i in range(len(path)-1):
-        p1 = np.array(path[i])
-        p2 = np.array(path[i+1])
+        p1 = path[i, :]
+        p2 = path[i+1, :]
         diff = p2 - p1
         if diff[0] > 1:
             xnext = [p1[0], p2[0]]
@@ -49,121 +49,28 @@ def merge_chunks(path):
         ydel = np.array(ydel, int_)
     return xdel, ydel
 
-@jit("Tuple((f4,i8,i8[:,:],i8[:,:]))(f8[:],f8[:])", nopython=True)
-def circular_dope_match(x, y):
+def get_matched_points(path):
     """
-    Compute Dynamic Ordered Persistence Editing (DOPE) between two time series
+    Get the matched indices in a path
 
     Parameters
     ----------
-    x: ndarray(M)
-        First time series
-    y: ndarray(N)
-        Second time series
-    
+    path: ndarray(K, 2, dtype=int)
+        Backtrace edit path
+
     Returns
     -------
-    float: optimal distance,
-    list of [int, int]: Ranges to delete in x critical time series
-    list of [int, int]: Ranges to delete in y critical time series
+    list of [i, j]: matchings
     """
-    ## Step 1: Setup critical point time series and costs
-    xc, xs, xidx = get_crit_timeseries(x, circular=True)
-    yc, ys, yidx = get_crit_timeseries(y, circular=True)
-    M = xc.size
-    N = yc.size
-    if M == 0 or N == 0:
-        # Corner case
-        return float32(np.sum(xc*xs) + np.sum(yc*ys)), int_(0), np.zeros((0,0), int_), np.zeros((0,0), int_)
-
-    # Use cumulative sums for quick deletion cost lookup
-    xcosts = np.zeros(xc.size+1, float32)
-    xcosts[1::] = np.cumsum(xc*xs)
-
-    y_shift = 0
-    if xs[0] != ys[0]:
-        yc = np.roll(yc, 1)
-        ys = np.roll(ys, 1)
-        yidx = np.roll(yidx, 1)
-        y_shift = 1
-    
-    min_cost = np.inf
-    min_shift = y_shift
-    min_xdel = np.zeros((0,0), int_)
-    min_ydel = np.zeros((0,0), int_)
-    for _ in range(0, N, 2):
-        ycosts = np.zeros(yc.size+1, float32)
-        ycosts[1::] = np.cumsum(yc*ys)
-        
-        ## Step 2: Setup data structures
-        # Dynamic programming matrix
-        D = np.inf*np.ones((M+1, N+1), float32)
-        D[0, 0] = 0
-        # Backtracing matrix; each entry is sizes of chunks deleted from each time series
-        back = [[[0, 0] for j in range(N+1)] for i in range(M+1)]
-        # Boundary conditions
-        D[0, 2::2] = ycosts[2::2]
-        D[2::2, 0] = xcosts[2::2]
-        for j in range(2, N+1, 2):
-            back[0][j] = [0, j]
-        for i in range(2, M+1, 2):
-            back[i][0] = [i, 0]
-        
-        ## Step 3: Do dynamic programming
-        for i in range(1, M+1):
-            for j in range(1, N+1):
-                # First try matching the last point in the L1 sum
-                # This should only be done if the last points are both mins or both maxes
-                if xs[i-1] == ys[j-1]:
-                    D[i, j] = np.abs(x[i-1]-y[j-1]) + D[i-1, j-1]
-                # Now try all other deletion possibilities
-                for k, l in [[0, 2], [2, 0], [2, 2]]:
-                    if i >= k and j >= l:
-                        # Delete chunks from each time series and use
-                        # the previously computed subproblem
-                        xdel = 0
-                        if k > 0:
-                            xdel = xcosts[i]-xcosts[i-k]
-                        ydel = 0
-                        if l > 0:
-                            ydel = ycosts[j]-ycosts[j-l]
-                        res = D[i-k, j-l] + xdel + ydel
-                        if res < D[i, j]:
-                            D[i, j] = res
-                            back[i][j] = [k, l]
-        ## Step 4: Do backtracing 
-        if D[-1, -1] < min_cost:
-            min_cost = D[-1, -1]
-            min_shift = y_shift
-            path = []
-            while i > 0 or j > 0:
-                path.append([i, j])
-                [di, dj] = back[i][j]
-                if di == 0 and dj == 0:
-                    i -= 1
-                    j -= 1
-                else:
-                    i -= di
-                    j -= dj
-            path.append([0, 0])
-            path.reverse()
-
-            ## Step 5: Extract and merge deleted chunk indices
-            xdel, ydel = merge_chunks(path)
-            
-            ## Step 6: Convert back to time series indices
-
-            min_xdel = xdel
-            min_ydel = ydel
-        # Shift for the next alignment attempt
-        yc = np.roll(yc, 2)
-        ys = np.roll(ys, 2)
-        yidx = np.roll(yidx, 2)
-        y_shift += 2
-    return min_cost, min_shift, min_xdel, min_ydel
+    matching = []
+    for i in range(1, len(path)):
+        diff = path[i, :] - path[i-1, :]
+        if diff[0] == 1 and diff[1] == 1:
+            matching.append(path[i-1])
+    return matching
 
 
-@jit("Tuple((f4,i8[:,:],i8[:,:]))(f8[:],f8[:],b1)", nopython=True)
+@jit("Tuple((f4,i8[:,:]))(f8[:],f8[:],b1)", nopython=True)
 def dope_match(x, y, circular=False):
     """
     Compute Dynamic Ordered Persistence Editing (DOPE) between two time series
@@ -178,8 +85,7 @@ def dope_match(x, y, circular=False):
     Returns
     -------
     float: optimal distance,
-    list of [int, int]: Ranges to delete in x critical time series
-    list of [int, int]: Ranges to delete in y critical time series
+    list of [int, int]: Backtrace path
     """
     ## Step 1: Setup critical point time series and costs
     x, xs, _ = get_crit_timeseries(x, circular=circular)
@@ -193,7 +99,7 @@ def dope_match(x, y, circular=False):
     ycosts[1::] = np.cumsum(y*ys)
     if M == 0 or N == 0:
         # Corner case
-        return xcosts[-1] + ycosts[-1], np.zeros((0,0), int_), np.zeros((0,0), int_)
+        return xcosts[-1] + ycosts[-1], np.zeros((0,0), int_)
 
     ## Step 2: Setup data structures
     # Dynamic programming matrix
@@ -246,10 +152,68 @@ def dope_match(x, y, circular=False):
             j -= dj
     path.append([0, 0])
     path.reverse()
+    path = np.array(path, int_)
 
     ## Step 5: Extract and merge deleted chunk indices
-    xdel, ydel = merge_chunks(path)
-    return D[-1, -1], xdel, ydel
+    return D[-1, -1], path
+
+
+
+@jit("Tuple((f4,i8,i8,i8[:,:]))(f8[:],f8[:])", nopython=True)
+def circular_dope_match(x, y):
+    """
+    Compute Dynamic Ordered Persistence Editing (DOPE) between two time series
+
+    Parameters
+    ----------
+    x: ndarray(M)
+        First time series
+    y: ndarray(N)
+        Second time series
+    
+    Returns
+    -------
+    float: optimal distance
+    int: Optimal x_shift
+    int: Optimal y_shift
+    ndarray(K, 2)
+        Optimal warping path
+    """
+    ## Step 1: Setup critical point time series and costs
+    xc, xs, _ = get_crit_timeseries(x, circular=True)
+    yc, ys, _ = get_crit_timeseries(y, circular=True)
+    M = xc.size
+    N = yc.size
+    if M == 0 or N == 0:
+        # Corner case
+        return float32(np.sum(xc*xs) + np.sum(yc*ys)), int_(0), int_(0), np.zeros((0,0), int_)
+    
+    
+    xc2 = np.roll(xc, 1) # Make another version of x that's been circularly shifted
+    y_shift = 0
+    min_cost = np.inf
+    min_xshift = 0
+    min_yshift = 0
+    min_path= np.zeros((0,0), int_)
+    for _ in range(N):
+        # First do with original x
+        cost, path = dope_match(xc, yc, True)
+        if cost < min_cost:
+            min_cost = cost
+            min_xshift = 0
+            min_yshift = y_shift
+            min_path = path
+        # Now redo with x circularly shifted by 1 spot
+        cost, path = dope_match(xc2, yc, True)
+        if cost < min_cost:
+            min_cost = cost
+            min_xshift = 1
+            min_yshift = y_shift
+            min_path = path
+        # Shift for the next alignment attempt
+        yc = np.roll(yc, 1)
+        y_shift += 1
+    return min_cost, min_xshift, min_yshift, min_path
 
 
 def weight_sequence_distance(w1, w2):
