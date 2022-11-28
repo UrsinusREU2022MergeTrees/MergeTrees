@@ -219,16 +219,20 @@ if __name__ == '__main__':
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("-p", "--path", type=str, action="store", default="./results", help="Path to results")
     parser.add_argument("-i", '--index', type=int, action="store", help="UCR dataset index")
+    parser.add_argument("-o", '--offset', type=int, action="store", help="Batch Offset", default=0)
     parser.add_argument("-n", '--n_batches', type=int, action="store", help="Number of batches", default=50)
     cmd_args = parser.parse_args()
 
-    idx = cmd_args.index
+    idx = cmd_args.index + cmd_args.offset
     dataset_idx = idx // cmd_args.n_batches
     batch_idx = idx % cmd_args.n_batches
 
     dataset_name = pyts.datasets.ucr_dataset_list()[dataset_idx]
+    print(dataset_name, batch_idx)
     dataset = get_dataset(dataset_name, all_eps, circular=False)
 
-    if not dataset_name in TO_SKIP:
+    if dataset_name in TO_SKIP:
+        print("Skipping", dataset_name)
+    else:
         print("Doing", dataset_name)
         get_dataset_distances(dataset_name, dataset, methods, all_eps, batch_idx, cmd_args.n_batches, cmd_args.path)
