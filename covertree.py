@@ -62,7 +62,6 @@ class CoverTree(object):
         #Find the maximum distance of the point at the root node
         #to all other points, and make this the initial radius
         self.R0 = np.max(self.dist(seedidx, range(D.shape[0])))
-        print "Constructing cover tree on %i points"%(D.shape[0])
         for i in range(self.D.shape[0]):
             if i == seedidx:
                 continue
@@ -77,7 +76,6 @@ class CoverTree(object):
                 self.equalidx[seedidx].append(i)
             else:
                 self.insertPoint(i, [self.root], [dRoot], 0)
-        print ""
 
     def addEqualNodes(self):
         """
@@ -102,7 +100,6 @@ class CoverTree(object):
                 n1.children.append(n2)
                 self.idxtonode[idx2] = n2
                 count += 1
-        print "There were %i redundant nodes added to level %i"%(count, maxLevel)
 
     def insertPoint(self, pidx, Ql, dpQl, l):
         """
@@ -124,7 +121,7 @@ class CoverTree(object):
         #Proceed as normal otherwise
         R = self.R0*self.theta**l
         if self.Verbose:
-            print "insertPoint ", pidx, ", Ql = ", [q.idx for q in Ql], " level ", l, ", R = ", R, ", dpQl = ", dpQl
+            print("insertPoint ", pidx, ", Ql = ", [q.idx for q in Ql], " level ", l, ", R = ", R, ", dpQl = ", dpQl)
         #Look at all of the children at the next level
         Q = []
         for node in Ql:
@@ -145,7 +142,7 @@ class CoverTree(object):
         dpQ = dpQ[dpQ <= RCover]
         if len(Q) == 0:
             if self.Verbose:
-                print "RETURN HERE (len(Q) = %i), np.min(dpQl) = %g > R=%g"%(len(Q), np.min(dpQl), R)
+                print("RETURN HERE (len(Q) = %i), np.min(dpQl) = %g > R=%g"%(len(Q), np.min(dpQl), R))
             return False
         if self.insertPoint(pidx, Q, dpQ, l+1):
             #Try inserting it at further down levels first
@@ -157,7 +154,7 @@ class CoverTree(object):
                 N.children.append(newNode)
                 self.idxtonode[pidx] = newNode
                 if self.Verbose:
-                    print "Inserting %i, child of %i, at level %i"%(pidx, N.idx, l+1)
+                    print("Inserting %i, child of %i, at level %i"%(pidx, N.idx, l+1))
                 return True
         return False
 
@@ -239,7 +236,7 @@ if __name__ == '__main__':
     seedidx = np.argmin(np.mean(D, 1))
     T = CoverTree(theta)
     T.construct(D, seedidx = seedidx)
-    print T.getDistSavingsStr()
+    print(T.getDistSavingsStr())
     count = 0
 
     #Now plot levels
@@ -254,7 +251,6 @@ if __name__ == '__main__':
         r = T.R0*(T.theta**(l))
         plt.clf()
         plt.plot(X[:, 0], X[:, 1], 'b.')
-        plt.hold(True)
         P = [i for i in range(len(levels)) if levels[i] <= l]
         plt.scatter(X[P, 0], X[P, 1], 30, 'r')
         Pc = [i for i in range(len(levels)) if levels[i] == l+1]
@@ -272,7 +268,6 @@ if __name__ == '__main__':
     edges = T.getEdges(T.root)
     plt.clf()
     plt.plot(X[:, 0], X[:, 1], 'b.')
-    plt.hold(True)
     for i in range(edges.shape[0]):
         e = edges[i, :].flatten()
         plt.plot(X[e, 0], X[e, 1], 'r')
@@ -289,7 +284,6 @@ if __name__ == '__main__':
         NTotal = 0
         Colors = np.random.rand(len(subtrees), 3)
         plt.clf()
-        plt.hold(True)
         for i in range(len(subtrees)):
             s = subtrees[i]
             idx = np.array([n.idx for n in s])

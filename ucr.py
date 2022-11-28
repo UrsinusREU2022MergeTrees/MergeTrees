@@ -13,7 +13,10 @@ import time
 import gudhi # For bottleneck
 import scipy.io as sio
 import os
+import glob
 from sys import argv
+
+TO_SKIP = ["Crop", "ElectricDevices"] # These datasets are too large
 
 def euclidean_compare(x, y):
     N = max(len(x), len(y))
@@ -65,7 +68,7 @@ def get_dataset(dataset_name, all_eps, circular=False):
                 dataset[skey].append((MT, x))
     return dataset
 
-def get_dataset_distances(dataset_name, dataset, methods, prefix="."):
+def get_dataset_distances(dataset_name, dataset, methods, all_eps, batch_idx, n_batches, prefix="."):
     """
     Compute all pairwise distances between the union of training and test data
     for a particular dataset
@@ -78,37 +81,97 @@ def get_dataset_distances(dataset_name, dataset, methods, prefix="."):
         Information with the dataset
     methods: dictionary {string: function handle}
         Methods to compute distances
+    all_eps: list of float
+        All epsilons to try
+    batch_idx: int
+        Index of batch to perform
+    n_batches: int
+        Total number of batches into which to split each job
     prefix: string
         Path to results file
     """
     M = len(dataset['data_train'])
     N = len(dataset['data_test'])
+    print(dataset.keys())
     for method_name, method in methods.items():
         for eps in all_eps:
             if eps > 0 and ("dtw" in method_name or "euclidean" in method_name):
                 continue
-            XAll = dataset['data_train_{}'.format(eps)] + dataset['data_test_{}'.format(eps)]
             eps = "{:.1f}".format(eps)
+            XTrain = dataset['data_train_{}'.format(eps)]
+            XTest = dataset['data_test_{}'.format(eps)]            
             tic = time.time()
-            D = np.zeros((M+N, M+N))
             filename = "{}/{}_{}_{}.mat".format(prefix, dataset_name, method_name, eps)
             if os.path.exists(filename):
                 print("Skipping", filename)
+                continue
+            filename = "{}/{}_{}_{}_{}.mat".format(prefix, dataset_name, method_name, batch_idx, eps)
+            if os.path.exists(filename):
+                print("Skipping", filename)
             else:
-                print("\nTraining ", method_name, "on", dataset_name, ", eps = ", eps)
-                for i in range(M+N):
+                print("\nTraining ", method_name, "on", dataset_name, ", eps = ", eps, ", batch ", batch_idx+1, "of", n_batches)
+                batch_size = int(np.ceil(M/n_batches))
+                print("batch_size", batch_size)
+                D = np.zeros((batch_size, N))
+                for i in range(batch_size):
                     if i%10 == 0 and i != 0:
                         print(".", end="", flush=True)
-                    xi = XAll[i]
-                    for j in range(i+1, M+N):
-                        yj = XAll[j]
-                        D[i, j] = method(xi, yj)
-                D = D + D.T
-                pix = np.arange(M+N)
-                I, J = np.meshgrid(pix, pix, indexing='ij')
-                D = D[I > J]
+                    idx = batch_idx*batch_size+i
+                    if idx < len(XTrain):
+                        xi = XTrain[idx]
+                        for j in range(N):
+                            yj = XTest[j]
+                            D[i, j] = method(xi, yj)
+                    else:
+                        D = D[0:i, :]
                 sio.savemat(filename, {"D":D})
                 print("Elapsed Time: {:.3f}".format(time.time()-tic))
+
+def merge_dataset_batches(dataset_name, dataset, methods, all_eps, n_batches, prefix="."):
+    """
+    Compute all pairwise distances between the union of training and test data
+    for a particular dataset
+
+    Parameters
+    ----------
+    dataset_name: string
+        Name of the dataset
+    dataset: dictionary
+        Information with the dataset
+    methods: dictionary {string: function handle}
+        Methods to compute distances
+    all_eps: list of float
+        All epsilons to try
+    n_batches: int
+        Total number of batches into which to split each job
+    prefix: string
+        Path to results file
+    """
+    M = len(dataset['data_train'])
+    N = len(dataset['data_test'])
+    batch_size = int(np.ceil(M/n_batches))
+    for method_name in methods.keys():
+        for eps in all_eps:
+            if eps > 0 and ("dtw" in method_name or "euclidean" in method_name):
+                continue
+            eps = "{:.1f}".format(eps)
+            filename = "{}/{}_{}_{}.mat".format(prefix, dataset_name, method_name, eps)
+            if os.path.exists(filename):
+                print("Skipping", filename)
+                continue
+            else:
+                # If this is the last batch, merge them all together and remove sub-batches
+                D = np.zeros((M, N))
+                if len(glob.glob("{}/{}_{}_*_{}.mat".format(prefix, dataset_name, method_name, eps))) != n_batches:
+                    print("Not enough batches found when attempting to merge", dataset_name)
+                else:
+                    print("Merging", filename)
+                    for batch_idx in range(n_batches):
+                        filename = "{}/{}_{}_{}_{}.mat".format(prefix, dataset_name, method_name, batch_idx, eps)
+                        D[batch_idx*batch_size:(batch_idx+1)*batch_size, :] = sio.loadmat(filename)["D"]
+                        os.remove(filename)
+                    filename = "{}/{}_{}_{}.mat".format(prefix, dataset_name, method_name, eps)
+                    sio.savemat(filename, {"D":D})
 
 def get_firstlast_dist(dataset):
     """
@@ -142,22 +205,30 @@ def unpack_D(d):
 
 if __name__ == '__main__':
     circular=False
-    all_eps = np.arange(0, 11)/10
+    all_eps = [0]
     methods = {}
     methods["dope"] = lambda X, Y: dope_match(X[1], Y[1], circular=circular)[0]
     methods["bottleneck"] = lambda X, Y: gudhi.bottleneck_distance(X[0].PD, Y[0].PD)
     methods["wasserstein"] = lambda X, Y: wasserstein(X[0].PD, Y[0].PD)
     methods["dtw_full"] = lambda X, Y: cdtw(X[1], Y[1], compute_path=False)[0]
-    methods["euclidean"] = lambda X, Y: euclidean_compare(X[1], Y[1])
+    methods["dtw_crit"] = lambda X, Y: cdtw(X[1], Y[1], compute_path=False)[0]
+    methods["euclidean"] = lambda X, Y: euclidean_compare(X[0].crit, Y[0].crit)
     
 
     parser = argparse.ArgumentParser(description="Evaluating UCR dataset",
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("-p", "--path", type=str, action="store", default="./results", help="Path to results")
     parser.add_argument("-i", '--index', type=int, action="store", help="UCR dataset index")
+    parser.add_argument("-n", '--n_batches', type=int, action="store", help="Number of batches", default=50)
     cmd_args = parser.parse_args()
 
-    dataset_name = pyts.datasets.ucr_dataset_list()[cmd_args.index]
+    idx = cmd_args.index
+    dataset_idx = idx // cmd_args.n_batches
+    batch_idx = idx % cmd_args.n_batches
+
+    dataset_name = pyts.datasets.ucr_dataset_list()[dataset_idx]
     dataset = get_dataset(dataset_name, all_eps, circular=False)
-    print("Doing", dataset_name)
-    get_dataset_distances(dataset_name, dataset, methods, cmd_args.path)
+
+    if not dataset_name in TO_SKIP:
+        print("Doing", dataset_name)
+        get_dataset_distances(dataset_name, dataset, methods, all_eps, batch_idx, cmd_args.n_batches, cmd_args.path)

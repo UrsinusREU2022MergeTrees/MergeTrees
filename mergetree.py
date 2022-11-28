@@ -599,6 +599,7 @@ class MergeTree(object):
             leaves[idx1].birth_death = (b, d)
         self.PD = np.array(I)
         self.PDIdx = np.array(IIdx, dtype=int)
+        self.crit = self.get_rep_timeseries()["ys"]
         return self.PD, self.PDIdx
     
     def convert_to_bdi(self):
