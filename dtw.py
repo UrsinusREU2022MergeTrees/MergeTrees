@@ -124,7 +124,9 @@ def cdtw(X, Y, radius=-1, compute_path=True, return_S=False):
 
     """
     S, jstarts, path = cdtw_(X, Y, radius=radius, compute_path=compute_path)
-    cost = S[-1][-1]
+    cost = np.inf
+    if len(X) > 0 and len(Y) > 0:
+        cost = S[-1][-1]
     if compute_path:
         path = np.array(path, dtype=int)
     ret = (cost, path)
