@@ -55,7 +55,8 @@ def cdtw_(X, Y, radius=-1, compute_path=True):
             P.append(np.zeros((jend-jstart+1, 2), int_))
 
     ## Step 2: Dynamic programming steps
-    S[0][0] = np.abs(X[0]-Y[0])
+    if M > 0 and N > 0:
+        S[0][0] = np.abs(X[0]-Y[0])
     for i in range(M):
         # Compute all dynamic programming entries in this row
         for jrel in range(len(S[i])):
@@ -123,12 +124,13 @@ def cdtw(X, Y, radius=-1, compute_path=True, return_S=False):
     -------
 
     """
-    S, jstarts, path = cdtw_(X, Y, radius=radius, compute_path=compute_path)
     cost = np.inf
+    path = []
     if len(X) > 0 and len(Y) > 0:
+        S, jstarts, path = cdtw_(X, Y, radius=radius, compute_path=compute_path)
         cost = S[-1][-1]
-    if compute_path:
-        path = np.array(path, dtype=int)
+        if compute_path:
+            path = np.array(path, dtype=int)
     ret = (cost, path)
     if return_S:
         M = X.size
