@@ -222,6 +222,21 @@ class MergeNode(object):
                 survived = False
         return survived
     
+    def make_zss_tree(self, node):
+        """
+        Convert this into a zhang/shasha tree object
+
+        Parameters
+        ----------
+        node: zss.simple_tree.Node
+            zss node object
+        """
+        from zss.simple_tree import Node
+        for c in self.children:
+            c_node = Node(c)
+            node.addkid(c_node)
+            c.make_zss_tree(c_node)
+
     def delete_singletons(self):
         """
         Delete nodes with a single child
@@ -446,6 +461,20 @@ class MergeTree(object):
             self.PDIdx = self.PDIdx[pers >= eps, :]
             self.PD = self.PD[pers >= eps, :]
 
+    def make_zss_tree(self):
+        """
+        Convert this into a zhang/shasha tree object
+
+        Returns
+        ----------
+        root: zss.simple_tree.Node
+            The root of the tree
+        """
+        from zss.simple_tree import Node
+        root = Node(self.root)
+        if self.root:
+            self.root.make_zss_tree(root)
+        return root
 
     def plot(self, use_inorder, params={}):
         """
@@ -585,6 +614,7 @@ class MergeTree(object):
                                 if left_right[0].x > left_right[1].x:
                                     left_right = left_right[::-1]
                                 node.children = left_right
+                                node.birth_death = (y[n], y[i])
                                 #Change the representative for this class to be the new node
                                 representatives[oldest_neighb] = node
                         unionfind_union(pointers, oldest_neighb, n, idxorder)
@@ -615,3 +645,63 @@ class MergeTree(object):
         if self.root:
             rootID = self.root.idx
         return nodeScalars, children, rootID
+
+
+def edit_remove_cost(node):
+    ret = 0
+    if len(node.label.birth_death) == 2:
+        (b, d) = node.label.birth_death
+        ret = np.abs(d-b)/2
+    return ret
+
+def update_cost(nodep, nodeq):
+    ret = 0
+    nodep = nodep.label
+    nodeq = nodeq.label
+    p_saddle = len(nodep.children) > 0
+    q_saddle = len(nodeq.children) > 0
+    if len(nodep.birth_death) == 2 and len(nodeq.birth_death) == 2:
+        if p_saddle == q_saddle: # Only match mins to mins and saddles to saddles
+            (bp, dp) = nodep.birth_death
+            (bq, dq) = nodeq.birth_death
+            ret = max(np.abs(bq-bp), np.abs(dq-dp))
+            ret = min(ret, (np.abs(dp-bp) + np.abs(dq-bq)))
+        else:
+            ret = np.inf
+    elif len(nodep.birth_death) == 2 or len(nodeq.birth_death) == 2:
+        # Don't update the cost of a global min
+        ret = np.inf
+    return ret
+
+
+def get_zss_map(T1, T2, compute_map=False):
+    """
+    Parameters
+    ----------
+    T1: zss.simple_tree.Node
+        The root of the first tree
+    T2: zss.simple_tree.Node
+        The root of the first tree
+    compute_map: bool
+        Whether to compute the map that achieves the optimal distance
+    """
+    from zss.simple_tree import Node
+    from zss.compare import distance, zssBacktrace
+
+    ret = distance(T1, T2, Node.get_children, edit_remove_cost, edit_remove_cost, update_cost, compute_map)
+
+    if compute_map:
+        (dist, KeyrootPtrs) = ret
+        (Map, BsNotHit) = zssBacktrace(KeyrootPtrs)
+
+        #Now copy over the returned map
+        Matched = []
+        BsNotHit = [N.label for N in BsNotHit]
+        for AZSS in Map:
+            A = AZSS.label
+            B = Map[AZSS]
+            if B:
+                B = B.label
+            Matched.append((A, B))
+        ret = (dist, Matched, BsNotHit)
+    return ret
