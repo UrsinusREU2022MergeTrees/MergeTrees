@@ -13,14 +13,19 @@ import gudhi # For bottleneck
 import scipy.io as sio
 import glob
 
-def euclidean_compare(x, y):
+def euclidean_shift_compare(x, y):
     N = max(len(x), len(y))
-    # Zeropadding, as suggested by Eammon
+    # Do uniform scaling to make these the same length
     if len(x) < N:
-        x = np.concatenate((x, np.zeros(N-len(x))))
+        x = np.interp(np.linspace(0, 1, N), np.linspace(0, 1, len(x)), x)
     if len(y) < N:
-        y = np.concatenate((y, np.zeros(N-len(y))))
-    return np.sum((x-y)**2)
+        y = np.interp(np.linspace(0, 1, N), np.linspace(0, 1, len(y)), y)
+    xf = np.fft.fft(x)
+    yf = np.fft.fft(y)
+    xy = np.max(np.real(np.fft.ifft(np.conj(yf)*xf)))
+    return np.sum(x**2) + np.sum(y**2) - 2*xy
+
+
 
 def get_distances(methods, dataset_path, results_path, batch_size, batch_index, sigma=10):
     """
@@ -69,7 +74,7 @@ def get_distances(methods, dataset_path, results_path, batch_size, batch_index, 
             for name, fn in methods.items():
                 print(name, row, j)
                 Ds[name][i, j] = fn(data[row], data[j])
-        sio.savemat("{}/mpeg7{}.mat".format(results_path, batch_index))
+        sio.savemat("{}/mpeg7_{}.mat".format(results_path, batch_index), Ds)
 
 
 if __name__ == '__main__':
@@ -79,7 +84,7 @@ if __name__ == '__main__':
     methods["bottleneck"] = lambda X, Y: gudhi.bottleneck_distance(X[0].PD, Y[0].PD)
     methods["wasserstein"] = lambda X, Y: wasserstein(X[0].PD, Y[0].PD)
     methods["circular_dtw"] = lambda X, Y: dtw_cyclic(get_csm(X[1][0::4], Y[1][0::4]))[1]
-    methods["euclidean"] = lambda X, Y: euclidean_compare(X[1], Y[1])
+    methods["euclidean"] = lambda X, Y: euclidean_shift_compare(X[1], Y[1])
 
     parser = argparse.ArgumentParser(description="Evaluating UCR dataset",
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
