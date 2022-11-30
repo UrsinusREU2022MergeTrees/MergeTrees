@@ -338,7 +338,7 @@ def plot_delete_figure(x_orig, idx):
                 ax.text(i, v+0.02*rg, "{}".format(xb2pidx[d2bx[i]]), c=c)
 
 
-def plot_dope_matching(x, y, xc, xs, xc_idx, yc, ys, yc_idx, cost, xdel, ydel, xname="x", yname="y", xcolor="C0", ycolor="C1", plot_matches=True, plot_verified=True):
+def plot_dope_matching(x, y, xc, xs, xc_idx, yc, ys, yc_idx, cost, xdel, ydel, xname="x", yname="y", xcolor="C0", ycolor="C1", plot_matches=True, plot_verified=True, tsname="Original"):
     """
     Create a plot of a particular dope matching, showing x/y deletions and
     matchings
@@ -362,7 +362,7 @@ def plot_dope_matching(x, y, xc, xs, xc_idx, yc, ys, yc_idx, cost, xdel, ydel, x
         ilast = rg[1]
     xnew = np.concatenate((xnew, xc[ilast::]))
     xnew_idx = np.array(np.concatenate((xnew_idx, xidx[ilast::])), dtype=int)
-    xdel_plot.set_title("{} critical points\nDeletion Cost={:.2f}".format(xname, xcost))
+    xdel_plot.set_title("{} critical points\nDeletion Cost={:.3f}".format(xname, xcost))
     xdel_plot.set_ylim(lims)
 
     ## Step 2: Show critical points deleted from y
@@ -381,7 +381,7 @@ def plot_dope_matching(x, y, xc, xs, xc_idx, yc, ys, yc_idx, cost, xdel, ydel, x
         ilast = rg[1]
     ynew = np.concatenate((ynew, yc[ilast::]))
     ynew_idx = np.array(np.concatenate((ynew_idx, yidx[ilast::])), dtype=int)
-    ydel_plot.set_title("{} critical points\nDeletion Cost={:.2f}".format(yname, ycost))
+    ydel_plot.set_title("{} critical points\nDeletion Cost={:.3f}".format(yname, ycost))
     ydel_plot.set_ylim(lims)
 
     ## Step 3: Show aligned points
@@ -393,7 +393,7 @@ def plot_dope_matching(x, y, xc, xs, xc_idx, yc, ys, yc_idx, cost, xdel, ydel, x
         for i, (xi, yi) in enumerate(zip(xnew, ynew)):
             plt.plot([i, i], [xi, yi], c='k', linestyle='--')
             plt.scatter([i, i], [xi, yi], s=20, c='k', zorder=100)
-    match_plot.set_title("L1 Aligned Points\n L1 Alignment Cost={:.2f}".format(l1cost))
+    match_plot.set_title("L1 Matched Points\n L1 Cost={:.3f}".format(l1cost))
     match_plot.set_ylim(lims)
 
     ## Step 4: Plot original time series
@@ -401,9 +401,9 @@ def plot_dope_matching(x, y, xc, xs, xc_idx, yc, ys, yc_idx, cost, xdel, ydel, x
     plt.plot(x, c=xcolor)
     plt.plot(y, c=ycolor)
     plt.ylim(lims)
-    title = "Original Time Series, Dope Cost: {:.2f}".format(cost)
+    title = "{} Time Series, Dope Cost: {:.3f}".format(tsname, cost)
     if plot_verified:
-        title += ", Verified Cost {:.2f}".format(xcost + ycost + l1cost)
+        title += ", Verified Cost {:.3f}".format(xcost + ycost + l1cost)
     plt.title(title)
     plt.legend([xname, yname])
     if plot_matches:
