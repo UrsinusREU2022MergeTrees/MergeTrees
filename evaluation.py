@@ -1,5 +1,7 @@
 import numpy as np
+import matplotlib.pyplot as plt
 from numba import jit
+import pyts.datasets
 
 def get_1nn_error_rate(D, idx_train, idx_test):
     """
@@ -180,46 +182,48 @@ def evaluate_ucr():
         fout.close()
 
 
-def evaluate_ucr_map_all():
+def evaluate_ucr_noparams():
     """
     Run all evaluation statistics across all methods across all datasets in the UCR dataset
     """
-    import glob
-    from ucr import get_dataset, unpack_D, get_firstlast_dist
+    from ucr import get_dataset
     import scipy.io as sio
     # Report mean rank of training data for every test item
-    datasets = [f.split("_dtw")[0].split("/")[-1] for f in glob.glob("results/*dtw*")]
-    methods = ['dope', 'bottleneck', 'wasserstein', 'euclidean', 'dtw_full']
-    fout = open("MAP_ALL.csv", "w")
-    fout.write("Dataset,")
-    for i, method in enumerate(methods):
-        fout.write(method)
-        if i < len(methods)-1:
-            fout.write(",")
-        else:
-            fout.write("\n")
-    for dataset_str in datasets:
-        print(dataset_str)
-        fout.write("{},".format(dataset_str))
-        dataset = get_dataset(dataset_str, [])
-        D_firstlast = get_firstlast_dist(dataset)
-        idx_train = dataset['target_train']
-        idx_test = dataset['target_test']
-        idx_all = np.concatenate((idx_train, idx_test))
+    datasets = pyts.datasets.ucr_dataset_list()
+    methods = ['dope', 'bottleneck', 'wasserstein', 'euclidean', 'dtw_full', 'dtw_crit']
+
+    statistics = [  ("MR", get_mean_rank), 
+                    ("MRR", get_mean_reciprocal_rank), 
+                    ("MRR_ALL", lambda D, idx_train, idx_test: get_mean_reciprocal_rank(D, idx_train, idx_test, do_min=False)), 
+                    ("MAP", get_map), ("1NN", get_1nn_error_rate)
+                ]
+    for (stat_name, fn_stat) in statistics:
+        fout = open("{}_ALL.csv".format(stat_name), "w")
+        fout.write("Dataset,")
         for i, method in enumerate(methods):
-            ## Step 1: Do the default parameter for this method
-            dataset_method = {**dataset, **sio.loadmat("results/{}_{}_0.0.mat".format(dataset_str, method))}
-            D = unpack_D(dataset_method['D'])
-            if (not "dtw" in method) and (not "euclidean" in method):
-                D += D_firstlast
-            res = get_map(D, idx_all, idx_all)
-            fout.write("{}".format(res))
+            fout.write(method)
             if i < len(methods)-1:
                 fout.write(",")
             else:
                 fout.write("\n")
-        fout.flush()
-    fout.close()
+        for dataset_str in datasets:
+            print(stat_name, dataset_str)
+            fout.write("{},".format(dataset_str))
+            dataset = get_dataset(dataset_str, [])
+            idx_train = dataset['target_train']
+            idx_test = dataset['target_test']
+            for i, method in enumerate(methods):
+                ## Step 1: Do the default parameter for this method
+                dataset_method = {**dataset, **sio.loadmat("results/{}_{}_0.0.mat".format(dataset_str, method))}
+                D = dataset_method['D']
+                res = fn_stat(D, idx_train, idx_test)
+                fout.write("{}".format(res))
+                if i < len(methods)-1:
+                    fout.write(",")
+                else:
+                    fout.write("\n")
+            fout.flush()
+        fout.close()
 
 def make_critical_distance_plot(data_path, alpha):
     """
@@ -238,7 +242,7 @@ def make_critical_distance_plot(data_path, alpha):
     import matplotlib.pyplot as plt
 
     data = pd.read_csv(data_path)
-    methods = ['dope', 'wasserstein', 'bottleneck', 'euclidean', 'dtw_full']
+    methods = ['dope', 'wasserstein', 'bottleneck', 'euclidean', 'dtw_full', 'dtw_crit']
     colors = {m:"C%i"%i for i, m in enumerate(methods)}
     N = len(methods)
     methods_data = [data[m].to_numpy() for m in methods]
@@ -288,4 +292,4 @@ def make_critical_distance_plot(data_path, alpha):
     plt.axis('off')
 
 if __name__ == '__main__':
-    evaluate_ucr()
+    evaluate_ucr_noparams()
