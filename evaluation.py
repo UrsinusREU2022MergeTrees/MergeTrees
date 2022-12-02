@@ -75,7 +75,7 @@ def get_mean_reciprocal_rank(D, idx_train, idx_test, do_min=True):
 
 
 @jit(nopython=True)
-def get_map_helper(idx, idx_train, idx_test):
+def get_precision_recall(idx, idx_train, idx_test):
     """
     Compute the mean average precision of every test item with respect to the
     training data
@@ -89,16 +89,18 @@ def get_map_helper(idx, idx_train, idx_test):
     idx_test: ndarray(N)
         Class indices of the test set. 
     """
-    map = 0
-    for j in range(idx.shape[1]):
+    n_tests = idx.shape[1]
+    prs = []
+    n_per_class = []
+    for j in range(n_tests): # For each test item
         recall = 0
-        ap = 0
         for i in range(idx.shape[0]):
             if idx_train[idx[i, j]] == idx_test[j]:
-                ap += (recall+1) / (i+1)
+                prec = (recall+1) / (i+1)
+                prs.append(prec)
                 recall += 1
-        map += ap/recall
-    return map/idx.shape[1]
+        n_per_class.append(recall)
+    return prs, n_per_class
 
 
 def get_map(D, idx_train, idx_test):
@@ -116,7 +118,14 @@ def get_map(D, idx_train, idx_test):
         Class indices of the test set. 
     """
     idx = np.argsort(D, axis=0)
-    return get_map_helper(idx, idx_train, idx_test)
+    prs, n_per_class = get_precision_recall(idx, idx_train, idx_test)
+    map = []
+    i1 = 0
+    for i in range(len(idx_test)):
+        i2 = i1 + n_per_class[i]
+        map.append(np.mean(prs[i1:i2]))
+        i1 = i2
+    return np.mean(map)
 
 def evaluate_ucr():
     """
@@ -242,7 +251,7 @@ def make_critical_distance_plot(data_path, alpha):
     import matplotlib.pyplot as plt
 
     data = pd.read_csv(data_path)
-    methods = ['dope', 'wasserstein', 'bottleneck', 'euclidean', 'dtw_full', 'dtw_crit']
+    methods = ["dtw_full", "dope", "wasserstein", "euclidean", "bottleneck", "dtw_crit"]
     colors = {m:"C%i"%i for i, m in enumerate(methods)}
     N = len(methods)
     methods_data = [data[m].to_numpy() for m in methods]
